@@ -3,6 +3,8 @@ import { AppState } from 'react-native'
 import type { RpcClient } from '../../../link/src/index.ts'
 import { callBot, callBotState, openLink, type TeamState } from '../connection.ts'
 import { ensureUnlock } from './gate'
+import { permissionSwitch, permissionWrite } from '../extras/permission.ts'
+import { confirmPermission } from '../extras/permission-confirm'
 import { createNoticeCursor, type NoticeCursorAnswer } from './notices.ts'
 import { OPTIMISTIC, optimistic, withWrites, type Write } from './optimistic.ts'
 import { t } from '../ui/i18n.ts'
@@ -53,6 +55,10 @@ export function useTeamLink(computer: SavedComputer, identity: PhoneIdentity) {
   const [error, setError] = useState<string | null>(null)
   const [hello, setHello] = useState<Hello | null>(null)
   const clientRef = useRef<RpcClient | undefined>(undefined)
+  const teamRef = useRef<TeamState | null>(null)
+  teamRef.current = team
+  const computerRef = useRef(computer)
+  computerRef.current = computer
   const revision = useRef<number>(-1)
   const writes = useRef<Write[]>([])
   const liveKey = useRef<string | undefined>(undefined)
@@ -124,8 +130,31 @@ export function useTeamLink(computer: SavedComputer, identity: PhoneIdentity) {
   const call = useCallback(async (endpoint: string, payload: unknown = {}) => {
     const client = clientRef.current
     if (client === undefined) throw offline()
+    const target = computerRef.current
+    const permission = permissionWrite(endpoint, payload)
+    if (permission) {
+      if (teamRef.current?.extras?.remotePermissions !== true || !await permissionSwitch(target.hostKey)) {
+        throw Object.assign(new Error('请先在电脑授权，并开启本手机的远程权限防误触开关'), { code: 'bot/refused' })
+      }
+      await ensureUnlock('extra-permission-write')
+      if (!await confirmPermission(payload)) throw Object.assign(new Error('已取消权限修改'), { code: 'unlock/canceled' })
+    }
     await ensureUnlock(endpoint)
-    if (clientRef.current !== client) throw offline()
+    if (clientRef.current !== client || computerRef.current.hostKey !== target.hostKey) throw offline()
+    if (permission && (teamRef.current?.extras?.remotePermissions !== true || !await permissionSwitch(target.hostKey))) throw offline()
+    const fullMessages = teamRef.current?.extras?.fullMessages === true
+    const enhanced = teamRef.current?.extras?.schema === 1
+    const messageRead = enhanced && ['chat', 'room-chat', 'agent-chat', 'bot-task-read'].includes(endpoint)
+    if (messageRead) {
+      endpoint = endpoint === 'bot-task-read' ? 'extra-task-read' : 'extra-messages'
+      payload = { ...(payload !== null && typeof payload === 'object' ? payload : {}), fullMessages }
+    }
+    const checkScope = () => {
+      if (clientRef.current !== client || computerRef.current.hostKey !== target.hostKey) throw offline()
+      if ((messageRead || endpoint.startsWith('extra-')) && fullMessages !== (teamRef.current?.extras?.fullMessages === true)) {
+        throw Object.assign(new Error('消息查看授权已变化，请重新读取'), { code: 'bot/stale' })
+      }
+    }
     try {
       if (endpoint === 'state' || endpoint === 'hello' || endpoint === 'notices') {
         return await callBot(client, endpoint, payload)
@@ -140,6 +169,7 @@ export function useTeamLink(computer: SavedComputer, identity: PhoneIdentity) {
         writes.current = writes.current.filter(entry => entry !== write)
         if (answer.state !== undefined && clientRef.current === client) apply(answer.state)
         else if (PENDING_MUTATING.has(endpoint) && clientRef.current === client) pollRef.current()
+        checkScope()
         return answer.value
       } finally {
         writes.current = writes.current.filter(entry => entry !== write)

@@ -28,8 +28,15 @@ test('pairing codes assign device kind, not the self-reported device name', () =
     assert.equal(new DeviceRegistry(saved).list()[0].kind, kind)
     assert.equal(registry.authorize('other', 'other-key', { pairingCode: code }), false)
     assert.equal(registry.authorize('other', 'other-key', { pairingCode: browserCode }), false)
+    const pairedAt = registry.list()[0].pairedAt
     assert.equal(registry.authorize('device', 'key', { name: 'changed' }), true)
     assert.equal(registry.list()[0].kind, kind)
+    assert.equal(registry.list()[0].name, 'changed')
+    assert.equal(registry.list()[0].pairedAt, pairedAt)
+    assert.equal(saved.length, 1)
+    assert.equal(saved[0].name, 'changed')
+    assert.equal(registry.authorize('device', 'wrong-key', { name: 'DSBotDeck（Windows）' }), false)
+    assert.equal(registry.list()[0].name, 'changed')
   }
 })
 

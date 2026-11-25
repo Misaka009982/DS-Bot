@@ -7,6 +7,7 @@ import { t } from '../../../ds-bot/src/client/i18n.js'
 import { ArrowUpIcon } from '../../../ds-bot/src/client/icons.js'
 import { ModelChoiceDock } from '../../../ds-bot/src/client/model-menu.js'
 import { PendingQuestion } from '../../../ds-bot/src/client/questions.js'
+import { extraChatRead, watchExtraMessages } from '../../../ds-bot/src/client/extras/chat-read.js'
 
 // The chat follows its end while the user is this close to it.
 const FOLLOW_PX = 80
@@ -104,9 +105,7 @@ function useChat(botId, roomId, part, feed) {
     if (cursor === undefined && !refresh) ready.current = false
     if (!refresh) setView(current => ({ ...current, loading: true, failed: false }))
     try {
-      const page = roomId !== undefined
-        ? await call('room-chat', { roomId, ...(cursor ? { cursor } : {}) })
-        : await call('chat', { botId, ...(cursor ? { cursor } : {}) })
+      const page = await extraChatRead(call, { botId, roomId, cursor })
       if (gen.current !== myGen) return
       const pageItems = roomId !== undefined ? adaptRoomItems(page.items) : (Array.isArray(page.items) ? page.items : [])
       const pageSessionId = page.sessionId ?? part
@@ -194,6 +193,10 @@ function useChat(botId, roomId, part, feed) {
       reloadQueued.current = false
     }
   }, [active, botId, roomId, part])
+
+  useEffect(() => watchExtraMessages(feed, { botId, roomId, sessionId: part }, () => {
+    if (ready.current) void loadRef.current(undefined, undefined, true)
+  }), [feed, botId, roomId, part])
 
   useEffect(() => feed.on((event, data) => {
     // The feed came back after a break: entries may have been missed.

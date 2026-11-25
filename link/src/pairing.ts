@@ -1,4 +1,5 @@
 import { deviceIdFor, randomToken } from './keys.ts'
+import { cleanDeviceName, refreshDeviceName } from './extras/device-name.ts'
 
 /** What each side tells the other inside the encrypted handshake. */
 export interface HandshakeHello {
@@ -137,7 +138,14 @@ export class DeviceRegistry {
 
   /** The check after the handshake: a paired device, or a new one that holds the open code. */
   authorize(deviceId: string, identityKey: string, hello: HandshakeHello): boolean {
-    if (this.matches(deviceId, identityKey)) return true
+    if (this.matches(deviceId, identityKey)) {
+      const device = this.devices.get(deviceId)!
+      const previous = device.name
+      if (refreshDeviceName(device, hello.name)) {
+        try { this.onChange?.(this.list()) } catch (error) { device.name = previous; throw error }
+      }
+      return true
+    }
     if (hello.pairingCode === undefined || !this.pairingOpen()) return false
     const pairing = this.pairing!
     const kind = sameText(hello.pairingCode, pairing.browserCode) ? 'browser' : 'phone'
@@ -147,7 +155,7 @@ export class DeviceRegistry {
       return false
     }
     this.pairing = undefined
-    this.devices.set(deviceId, { deviceId, identityKey, name: hello.name ?? '', pairedAt: this.now(), kind })
+    this.devices.set(deviceId, { deviceId, identityKey, name: cleanDeviceName(hello.name) ?? '', pairedAt: this.now(), kind })
     this.onChange?.(this.list())
     return true
   }

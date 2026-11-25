@@ -1608,7 +1608,9 @@ export function install(rt) {
     const controller = ctx.sessionController
     const admitted = async function (request, ...rest) {
       try {
-        return await prompt.call(this, request, ...rest)
+        return await (rt.extraSendPrompt
+          ? rt.extraSendPrompt(request, value => prompt.call(this, value, ...rest))
+          : prompt.call(this, request, ...rest))
       } catch (error) {
         const id = request?.sessionId
         if (id === undefined || (rt.roomOf(id) === undefined && !rt.isBotSession(id))) throw error

@@ -87,18 +87,31 @@ export function install(rt) {
   const callBot = async (params, signal, deviceId) => {
     const endpoint = String(params?.endpoint ?? '')
     // Fail closed if the calling device is missing, unknown, or was revoked.
-    const device = typeof deviceId === 'string' && deviceId !== ''
-      ? registry.list().find(entry => entry.deviceId === deviceId)
-      : undefined
-    const denied = remoteAccessError(device, endpoint) ?? agentMediaError(device, endpoint, params?.payload)
+    const deviceOf = () => typeof deviceId === 'string' && deviceId !== ''
+      ? registry.list().find(entry => entry.deviceId === deviceId) : undefined
+    const authorize = () => {
+      const device = deviceOf()
+      return remoteAccessError(device, endpoint)
+        ?? rt.extraRemoteAccessError?.(device, endpoint, params?.payload)
+        ?? agentMediaError(device, endpoint, params?.payload)
+    }
+    const finish = value => {
+      const denied = authorize()
+      return denied === undefined ? value : { ok: false, error: denied }
+    }
+    const denied = authorize()
     if (denied !== undefined) return { ok: false, error: denied }
     const wanted = params?.state !== null && typeof params?.state === 'object' && !Array.isArray(params.state) ? params.state : undefined
     const before = rt.state.revision
-    const answer = await serve(endpoint, params?.payload ?? null, signal)
-    const result = endpoint === 'state' && answer?.ok === true ? { ...answer, value: remoteState(answer.value) } : answer
-    if (wanted === undefined || result?.ok !== true || rt.state.revision === before) return result
+    const remoteView = value => rt.extraRemoteState?.(remoteState(value), deviceOf()) ?? remoteState(value)
+    const answer = await serve(endpoint, params?.payload ?? null, signal, { authorize,
+      fullMessages: () => rt.extraFullMessagesAllowed?.(deviceOf()) === true,
+      deviceKind: () => deviceOf()?.kind,
+    })
+    const result = endpoint === 'state' && answer?.ok === true ? { ...answer, value: remoteView(answer.value) } : answer
+    if (wanted === undefined || result?.ok !== true || rt.state.revision === before) return finish(result)
     const state = await serve('state', wanted, signal).then(answer => (answer?.ok === true ? answer.value : undefined), () => undefined)
-    return state === undefined ? result : { ...result, state: remoteState(state) }
+    return finish(state === undefined ? result : { ...result, state: remoteView(state) })
   }
 
   const stop = () => {
@@ -141,6 +154,7 @@ export function install(rt) {
     link.start()
   }
 
+  rt.extraPairedDevices = () => { read(); return registry.list() }
   rt.phoneView = () => {
     reconcile()
     if (pairing !== null && !registry.pairingOpen()) pairing = null
@@ -151,7 +165,8 @@ export function install(rt) {
       on: data.on === true,
       status: link?.status ?? 'off',
       ...(reason === undefined ? {} : { error: reason }),
-      phones: registry.list().map(({ deviceId, name, pairedAt, kind }) => ({ id: deviceId, name, pairedAt, kind, connected: connected.has(deviceId) })),
+      phones: registry.list().map(entry => ({ id: entry.deviceId, name: entry.name, pairedAt: entry.pairedAt, kind: entry.kind,
+        connected: connected.has(entry.deviceId), fullMessages: rt.extraFullMessagesAllowed?.(entry) === true })),
       pairing,
     }
   }

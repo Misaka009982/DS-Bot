@@ -6,7 +6,7 @@ import { GATED } from './gated.ts'
 export { GATED } from './gated.ts'
 
 export async function ensureUnlock(endpoint: string): Promise<void> {
-  if (!GATED.has(endpoint)) return
+  if (!GATED.has(endpoint) && endpoint !== 'extra-permission-write') return
   const level = await LocalAuth.getEnrolledLevelAsync()
   if (level === LocalAuth.SecurityLevel.NONE) {
     throw Object.assign(new Error(t('Set a screen lock on this phone to do this')), { code: 'unlock/unavailable' })

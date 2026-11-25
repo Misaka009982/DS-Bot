@@ -15,6 +15,9 @@ export const BROWSER_ALLOWED = new Set([
   'approval-answer', 'btw-delete', 'secret-cancel', 'connector-request-cancel',
   // Bot background tasks
   'bot-stop-task',
+  // 增补的只读消息／工具／待办接口；fullMessages 仍由电脑逐设备验权。
+  'extra-status', 'extra-tool-detail', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read',
+  'extra-bot-set', 'extra-new-session',
   // Side questions
   'side-new', 'side-ask', 'side-cancel', 'side-close',
   // Bot and group management

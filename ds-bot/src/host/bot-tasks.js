@@ -702,6 +702,7 @@ export function install(rt) {
   // a fast mid-model steer cut. Disabled for local CLI agents in v1.
   function shouldMoveForeground(bot, sessionId) {
     if (bot === undefined || sessionId === undefined || rt.readOnly?.() !== undefined) return false
+    if (rt.extraKeepForeground?.(sessionId)) return false
     if (sessionId !== rt.chatOf(bot.id)) return false
     if (rt.groupOwners.has(sessionId) || rt.taskOwners?.has(sessionId)) return false
     if (rt.isSwitchingPart?.(sessionId)) return false

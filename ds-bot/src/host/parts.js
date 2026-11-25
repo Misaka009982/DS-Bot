@@ -1149,14 +1149,15 @@ export function install(rt) {
   // `cutoff`: the part kept being cut off at the output limit, so it moves on without
   // asking the model for a note at the same size.
   // `engine`: because the Bot now runs on something else (see engineMoved).
-  function startSwitch(agent, { resume = false, carry = [], info, joined, overflow = false, failed, bare = false, folder = false, cutoff = false, engine = false, hard = overflow || folder || engine || cutoff } = {}) {
+  function startSwitch(agent, { resume = false, carry = [], info, joined, overflow = false, failed, bare = false, folder = false, cutoff = false, engine = false, hard = overflow || folder || engine || cutoff, fresh = false, check } = {}) {
     const place = placeOf(agent.id)
     if (place === undefined || switches.has(agent.id) || readOnly()) return
     const resumeOrigin = resume || place.botId === undefined ? rt.holdImOrigin?.(agent.id) : undefined
-    const job = { ...place, carry: [...carry], info, joined, resume, resumeOrigin, overflow, failed, bare, folder, engine, hard, cutoff, since: Date.now() }
+    const job = { ...place, carry: [...carry], info, joined, resume, resumeOrigin, overflow, failed, bare, folder, engine, hard, cutoff, fresh, check, since: Date.now() }
     switches.set(agent.id, job)
     const done = runSwitch(agent, job)
       .catch(error => {
+        if (fresh) job.error = error
         const name = rt.botOf(job.botId)?.name ?? rt.roomOf(job.roomId)?.name ?? agent.id
         if (unloaded(error)) return noteInfo('ds-bot: plugin unloaded while %s switched parts; input kept in part %s', name, agent.id)
         rt.warn('ds-bot: %s did not move on to a fresh part: %s', name, error)
@@ -1209,7 +1210,10 @@ export function install(rt) {
       // A state write that fails here (full disk, a file another program holds, a lost lock)
       // must not end up as an unhandled rejection, which stops the whole host.
       .catch(error => rt.warn('ds-bot: the switch of %s did not finish: %s', agent.id, error))
-    return done.then(() => job.moved === true)
+    return done.then(() => {
+      if (fresh && !job.moved && job.error !== undefined) throw job.error
+      return job.moved === true
+    })
   }
 
   async function runSwitch(agent, job) {
@@ -1297,6 +1301,7 @@ export function install(rt) {
 
   async function moveOn(agent, job, signal) {
     job.started = true
+    if (job.fresh) return rt.extraMoveToFreshPart(agent, job, signal, forward, restore)
     const bot = job.botId === undefined ? undefined : rt.botOf(job.botId)
     const room = rt.roomOf(job.roomId)
     if (bot === undefined ? room === undefined
@@ -1838,7 +1843,7 @@ export function install(rt) {
     .trim()
 
   function displayItems(partId, events, session, seedTurn, options = {}) {
-    const hidden = options.taskView === true ? new Set() : new Set(state.exchangeTurns[partId] ?? [])
+    const hidden = options.fullMessages === true || options.taskView === true && options.extraMessages !== true ? new Set() : new Set(state.exchangeTurns[partId] ?? [])
     // Files a turn presented, attached to its closing Bot row so the phone can save
     // them: the card shows name and type, the save action names seq and index.
     const presented = []
@@ -1988,7 +1993,7 @@ export function install(rt) {
     const signal = AbortSignal.timeout(HISTORY_TIMEOUT_MS)
     // An archived earlier part may have no live agent left; its stored events
     // still page fine, so resolve failure only drops the live-session cap.
-    const agent = await rt.resolveAgent(part.sessionId).catch(() => undefined)
+    const agent = await (rt.extraHistoryAgent ? rt.extraHistoryAgent(part.sessionId) : rt.resolveAgent(part.sessionId)).catch(() => undefined)
     const page = await ctx.sessionController.page({
       address: { kind: 'session', sessionId: part.sessionId },
       ...(agent ? { throughSeq: Number(agent.session.seq) - 1 } : {}),
@@ -2023,6 +2028,7 @@ export function install(rt) {
       }
     }
     const items = displayItems(part.sessionId, events, agent?.session, seedTurn, options)
+    if (options.extraMessages === true) rt.extraProjectMessages?.(items, events, part.sessionId, options)
     if (options.taskView === true) {
       for (const item of items) {
         if (item.sessionId === undefined) item.sessionId = part.sessionId
@@ -2035,7 +2041,7 @@ export function install(rt) {
     const more = !hitFloor && page.hasMore && events.length > 0
     // The line above a part's first message marks where it began.
     if (!more && index > 0) items.unshift({ kind: 'divider', time: part.startedAt })
-    if (steps === true) await applySteps(items, events, part.sessionId, options)
+    if (steps === true) await applySteps(items, events, part.sessionId, { ...options, seedTurn: seedTurn ?? openTurnAt(ctx.get?.('sessionProjections'), agent?.session, events[0]?.seq) })
     return { items, cursor: more ? { part: index, beforeSeq: events[0].seq } : index > 0 ? { part: index - 1 } : null }
   }
 
@@ -2113,10 +2119,12 @@ export function install(rt) {
   // Places a page's `steps` items after the last row of each turn and fills in
   // `ms` from the turn's thinking time when the stream has it.
   async function applySteps(items, events, sessionId, options) {
-    const byTurn = stepsItems(events, sessionId, options?.taskView === true)
+    const byTurn = options?.extraSteps === true && rt.extraStepsItems
+      ? rt.extraStepsItems(events, sessionId, { includeHidden: options.fullMessages === true || options.taskView === true && options.extraMessages !== true, seedTurn: options.seedTurn, labelFor: toolLabel })
+      : stepsItems(events, sessionId, options?.taskView === true)
     const known = pageThinkingMs(events, options)
     for (const [turn, tools] of byTurn) {
-      const item = { kind: 'steps', turn, tools, time: items.filter(it => it.turn === turn).at(-1)?.time ?? events.at(-1)?.time }
+      const item = { kind: 'steps', turn, tools, ...(options?.extraSteps === true ? { sessionId } : {}), time: items.filter(it => it.turn === turn).at(-1)?.time ?? events.at(-1)?.time }
       const ms = known.has(turn) ? known.get(turn) : await rt.thinkingOf(sessionId, turn).catch(() => undefined)
       if (typeof ms === 'number' && ms > 0) item.ms = ms
       const at = items.reduce((last, it, index) => it.turn === turn ? index : last, -1)
@@ -2161,22 +2169,22 @@ export function install(rt) {
     } catch { /* a tail miss must never take out the other listeners */ }
   })
 
-  async function chatPage(botId, cursor, steps = false) {
+  async function chatPage(botId, cursor, steps = false, options = {}) {
     const parts = partsOf(botId)
     if (parts.length === 0) throw Object.assign(new Error('Unknown Bot'), { code: 'bot/not-found' })
     const index = Number.isInteger(cursor?.part) ? cursor.part : parts.length - 1
     if (index < 0 || index >= parts.length) return { sessionId: parts.at(-1).sessionId, items: [], cursor: null }
-    return { sessionId: parts.at(-1).sessionId, ...(await partPage(parts, index, cursor, steps)) }
+    return { sessionId: parts.at(-1).sessionId, ...(await partPage(parts, index, cursor, steps, options)) }
   }
 
   // A DSH Agent's newest Session, paged like one part of a Bot's chat.
-  async function agentPage(agentId, cursor, steps = false) {
+  async function agentPage(agentId, cursor, steps = false, options = {}) {
     const agent = rt.agentById(agentId)
     if (agent === undefined) throw Object.assign(new Error('Unknown DSH Agent'), { code: 'bot/not-found' })
     // Every Session archived: the Agent is still there, with an empty chat.
     const sessionId = agent.sessions.at(-1)
     if (sessionId === undefined) return { items: [], cursor: null }
-    return { sessionId, ...(await partPage([{ sessionId }], 0, cursor, steps)) }
+    return { sessionId, ...(await partPage([{ sessionId }], 0, cursor, steps, options)) }
   }
 
   // Opens a dedicated Session for a Bot's background task (`bot.tasks`).
@@ -2278,7 +2286,7 @@ export function install(rt) {
 
   // Read-only transcript paging for one background task across its own segments,
   // excluding any inherited foreground history that predates the task itself.
-  async function taskPage(botId, taskId, cursor, steps = false) {
+  async function taskPage(botId, taskId, cursor, steps = false, options = {}) {
     const bot = rt.botOf(botId)
     const task = (bot?.tasks ?? []).find(item => item?.id === taskId)
     if (task === undefined) throw Object.assign(new Error('Unknown task'), { code: 'bot/not-found' })
@@ -2292,7 +2300,10 @@ export function install(rt) {
     const hasStoredStart = Number.isInteger(task.startSeq) && task.startSeq >= 0
     let minSeq = hasStoredStart ? task.startSeq : undefined
     if (index === 0 && !hasStoredStart) {
-      const firstAgent = await rt.resolveAgent(parts[0].sessionId).catch(() => undefined)
+      const firstAgent = await (rt.extraHistoryAgent ? rt.extraHistoryAgent(parts[0].sessionId) : rt.resolveAgent(parts[0].sessionId)).catch(() => undefined)
+      if (options.extraMessages === true && firstAgent === undefined) {
+        throw Object.assign(new Error('This older task has no stored history boundary. Read it on the computer.'), { code: 'bot/unavailable' })
+      }
       const inherited = firstAgent?.session?.inheritedEventCount
       const movedOrigin = task.origin === 'fg-handoff' || task.origin === 'bot-handoff'
       if (!movedOrigin && Number.isInteger(inherited) && inherited > 0) {
@@ -2311,9 +2322,10 @@ export function install(rt) {
     }
     return {
       sessionId: parts.at(-1).sessionId,
-      ...(await partPage(parts, index, cursor, steps, { taskView: true, ...(index === 0 && minSeq !== undefined && minSeq > 0 ? { minSeq } : {}) })),
+      ...(await partPage(parts, index, cursor, steps, { ...options, taskView: true, ...(index === 0 && minSeq !== undefined && minSeq > 0 ? { minSeq } : {}) })),
     }
   }
 
+  rt.extraStartFreshPart = (agent, check) => startSwitch(agent, { fresh: true, check })
   Object.assign(rt, { clock, partsOf, partsOfThread, historyEntry, partLines, noteText, earlierPage, chatPage, agentPage, taskPage, displayItems, applySteps, followFolder, followEngine, heldBack, openTaskPart, forkForegroundPart, isSwitchingPart: id => switches.has(id), sessionTokens: session => tokensOf(session), switchJobs: () => switches.values() })
 }

@@ -311,7 +311,7 @@ export function install(rt) {
     const index = Number.isInteger(cursor?.part) ? cursor.part : parts.length - 1
     if (index < 0 || index >= parts.length) return { roomId: room.id, items: [], cursor: null, running: false, speaking: null }
     const part = parts[index]
-    const agent = await rt.resolveAgent(part.sessionId).catch((error) => {
+    const agent = await (rt.extraHistoryAgent ? rt.extraHistoryAgent(part.sessionId) : rt.resolveAgent(part.sessionId)).catch((error) => {
       if (index === parts.length - 1) throw error
       return undefined
     })
@@ -326,7 +326,6 @@ export function install(rt) {
     for (const item of items) {
       if (item.sessionId === undefined && (item.kind === 'bot' || item.kind === 'post')) item.sessionId = part.sessionId
     }
-    if (body.steps === true) await rt.applySteps?.(items, events, part.sessionId, { atTip: !Number.isInteger(cursor?.beforeSeq) && index === parts.length - 1 })
     const running = [...rt.roomProgress.entries()].filter(([, round]) => round.roomId === room.id)
     // The newest page shows what the running round has said so far, where its call sits.
     if (cursor === undefined) {
@@ -338,6 +337,8 @@ export function install(rt) {
         items.splice(at, 0, ...live)
       }
     }
+    if (body.extraMessages === true) rt.extraProjectMessages?.(items, events, part.sessionId, { fullMessages: body.fullMessages === true })
+    if (body.steps === true) await rt.applySteps?.(items, events, part.sessionId, { atTip: !Number.isInteger(cursor?.beforeSeq) && index === parts.length - 1, extraSteps: body.extraSteps === true })
     const more = page.hasMore && events.length > 0
     return {
       roomId: room.id,

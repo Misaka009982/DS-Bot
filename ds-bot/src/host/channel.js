@@ -152,6 +152,7 @@ export function install(rt) {
     connectors: rt.connectorsView(),
     capabilityStatuses: rt.capabilityStatusesView(),
     phone: rt.phoneView(),
+    extras: rt.extraView?.() ?? null,
     mcp: rt.mcpView(),
     imStatus: rt.imStatusView?.() ?? {},
     imVia: rt.imViaView?.() ?? {},
@@ -256,12 +257,15 @@ export function install(rt) {
     if (body.defaultBotModel !== undefined) await rt.syncRoomSessions?.()
   }
 
-  const handle = async (endpoint, payload, signal) => {
+  const handle = async (endpoint, payload, signal, caller) => {
     try {
       const body = payload ?? {}
       await rt.refresh()
+      const denial = caller?.authorize?.()
+      if (denial !== undefined) return { ok: false, error: denial }
       const readOnly = rt.readOnly()
-      if (readOnly !== undefined && !READS.has(endpoint)) return fail(readOnly, 'bot/read-only')
+      if (readOnly !== undefined && !READS.has(endpoint) && rt.isExtraRead?.(endpoint) !== true) return fail(readOnly, 'bot/read-only')
+      if (rt.isExtraEndpoint?.(endpoint)) return ok(await rt.extraEndpoint(endpoint, body, signal, caller))
       switch (endpoint) {
         case 'state': {
           if (typeof body.locale === 'string' && /^[a-z]{2,3}(-[\w-]+)?$/i.test(body.locale)) uiLocale = body.locale
@@ -316,14 +320,16 @@ export function install(rt) {
           return ok(state.prefs)
         case 'exchange': {
           await rt.load()
-          return ok(rt.exchangesOf(body.a, body.b))
+          const value = rt.exchangesOf(body.a, body.b)
+          return ok(caller !== undefined && rt.extraSanitizeMessages ? await rt.extraSanitizeMessages(value) : value)
         }
         case 'exchange-text': {
           await rt.load()
           const entry = (body.a !== undefined && body.b !== undefined ? rt.exchangeOf(body.id, body.a, body.b) : undefined)
             ?? state.exchanges.find(item => item.id === body.id)
           if (entry === undefined) return fail('This message is no longer kept', 'bot/stale')
-          return ok(await rt.exchangeText(entry))
+          const value = await rt.exchangeText(entry)
+          return ok(caller !== undefined && rt.extraSanitizeMessages ? await rt.extraSanitizeMessages(value) : value)
         }
         // A long Bot post's file (attachLong), for the group chat's "Show all".
         case 'file-text': {
@@ -703,6 +709,7 @@ export function install(rt) {
           await rt.load()
           await rt.sendUser({
             sessionId: body.sessionId,
+            mode: body.mode,
             content: [
               ...(text === '' ? [] : [{ type: 'text', text }]),
               ...images.map(({ mediaType, data }) => ({ type: 'image', mediaType, data })),
@@ -918,16 +925,17 @@ export function install(rt) {
     return undefined
   }
 
-  async function sendUser({ sessionId: ref, content, requestId = randomUUID() }) {
+  async function sendUser({ sessionId: ref, content, requestId = randomUUID(), mode: requestedMode }) {
     const past = rt.pastOwners.get(ref)
     const room = rt.roomOf(ref)
     let sessionId = ownThreadTarget(ref, past)
       ?? (room !== undefined ? rt.sessionOfRoom(room)
         : past !== undefined ? rt.sessionOfRoom(rt.roomOf(past.roomId)) : ref)
+    const mode = rt.extraMessageMode?.(sessionId, requestedMode) ?? (requestedMode === 'steer' ? 'steer' : 'queue')
     const ownerBotId = rt.chatOwners.get(sessionId)
     if (ownerBotId !== undefined && !rt.groupOwners.has(sessionId) && !rt.taskOwners?.has(sessionId)) {
       const bot = rt.botOf(ownerBotId)
-      if (rt.shouldMoveForeground?.(bot, sessionId)) {
+      if (!rt.extraKeepForeground?.(sessionId, requestedMode) && rt.shouldMoveForeground?.(bot, sessionId)) {
         sessionId = await rt.handoffForeground(bot, sessionId)
       }
     }
@@ -935,7 +943,7 @@ export function install(rt) {
     await ctx.sessionController.prompt({
       requestId,
       sessionId,
-      mode: 'queue',
+      mode,
       content,
     }, AbortSignal.timeout(30_000))
   }

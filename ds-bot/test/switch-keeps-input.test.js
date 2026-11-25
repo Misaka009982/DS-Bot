@@ -576,6 +576,210 @@ test('stream-only usage on assistant/message also detects premature window cut-o
 })
 
 
+test('增补新建会话保留身份和设置，旧历史可读，新 Session 不携带旧消息或摘要', async t => {
+  const host = await start()
+  t.after(host.stop)
+  const bot = host.rt.botOf('b')
+  Object.assign(bot, { instructions: '保留我的角色', permission: 'read-only', extras: { messageMode: 'steer' }, memoryReview: { on: true } })
+  const before = structuredClone(bot)
+  host.agentOf('b').session.requestHeader = () => ({ config: { provider: 'gateway', model: 'model', reasoningEffort: 'high' } })
+  host.agentOf('b').session.deriveMessages = () => [{ role: 'assistant', content: [{ type: 'text', text: '旧消息' }] }]
+  const selected = []
+  host.ctx.sessionController.selectModel = async request => { selected.push(request) }
+  host.ctx.sessionController.fork = () => { throw new Error('新会话不能 fork 历史') }
+  host.ctx.llm.stream = () => { throw new Error('新会话不能请求摘要') }
+  const permissions = []
+  host.rt.applyPermission = async (owner, id) => { permissions.push([owner.id, id, owner.permission]) }
+  const result = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.value, { botId: 'b', sessionId: 's1' })
+  const after = host.state().bots.b
+  const { sessionId, segments, ...kept } = after
+  const { sessionId: previousId, segments: previousSegments, ...expected } = before
+  assert.equal(previousId, 'b')
+  assert.equal(previousSegments, undefined)
+  assert.equal(sessionId, 's1')
+  assert.deepEqual(kept, expected)
+  assert.deepEqual(segments.map(segment => segment.sessionId), ['b'])
+  assert.equal(segments[0].note, undefined)
+  assert.equal(segments[0].fallback, undefined)
+  assert.deepEqual(host.agentOf('s1').calls, [])
+  assert.deepEqual(permissions, [['b', 's1', 'read-only']])
+  assert.equal(selected[0].sessionId, 's1')
+  assert.equal(selected[0].provider, 'gateway')
+  assert.equal(selected[0].reasoningEffort, 'high')
+  assert.equal(host.rt.selfOf('b'), 'b')
+  assert.equal(host.rt.selfOf('s1'), 'b')
+  assert.deepEqual(host.archived, [['b', { stopActivity: true }]])
+  assert.deepEqual(host.state().switching, {})
+})
+
+test('增补新建会话拒绝过期目标、未知 Bot 和额外设置字段', async t => {
+  const host = await start()
+  t.after(host.stop)
+  for (const [payload, code] of [
+    [{ botId: 'b', sessionId: 'older' }, 'bot/stale'],
+    [{ botId: 'missing', sessionId: 'b' }, 'bot/not-found'],
+    [{ botId: 'b', sessionId: 'b', permission: 'full' }, 'bot/invalid'],
+  ]) {
+    const result = await host.call('extra-new-session', payload)
+    assert.equal(result.ok, false)
+    assert.equal(result.error.code, code)
+  }
+  assert.deepEqual(host.created, [])
+})
+
+test('增补新建会话保护运行、排队、待答卡片和未结束的协作', async t => {
+  const host = await start()
+  t.after(host.stop)
+  const refused = async () => {
+    const result = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+    assert.equal(result.ok, false)
+    assert.equal(result.error.code, 'bot/busy')
+  }
+  const agent = host.agentOf('b')
+  agent.status = 'running'
+  await refused()
+  agent.status = 'idle'
+  agent.inbox.nextTurn.push(said('queued', '还没发送'))
+  await refused()
+  agent.inbox.nextTurn.length = 0
+  host.rt.state.questions.b = { id: 'question' }
+  await refused()
+  delete host.rt.state.questions.b
+  host.rt.state.works.pending = { fromPart: 'b' }
+  await refused()
+  delete host.rt.state.works.pending
+  const waits = host.rt.waitsForApproval
+  host.rt.waitsForApproval = id => id === 'b'
+  await refused()
+  host.rt.waitsForApproval = waits
+  assert.deepEqual(host.created, [])
+})
+
+test('增补新建会话在创建、模型、权限或保存失败时保留原会话和历史', async t => {
+  for (const stage of ['create', 'model', 'permission', 'save']) await t.test(stage, async sub => {
+    const host = await start({ fail: stage === 'create' ? { create: new Error('创建失败') } : {} })
+    sub.after(host.stop)
+    if (stage === 'model') {
+      host.rt.desiredModel = async () => 'gateway/model'
+      host.rt.selectSessionModel = async () => { throw new Error('模型选择失败') }
+    }
+    if (stage === 'permission') host.rt.applyPermission = async () => { throw new Error('权限设置失败') }
+    if (stage === 'save') {
+      const save = host.rt.save
+      let failed = false
+      host.rt.save = options => {
+        if (!failed && host.rt.chatOf('b') === 's1') { failed = true; return Promise.reject(new Error('保存失败')) }
+        return save(options)
+      }
+    }
+    const result = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+    assert.equal(result.ok, false)
+    assert.equal(host.rt.chatOf('b'), 'b')
+    assert.equal(host.state().bots.b.sessionId, 'b')
+    assert.equal(host.state().bots.b.segments, undefined)
+    assert.equal(host.archived.some(([id]) => id === 'b'), false)
+    if (stage !== 'create') assert.equal(host.archived.some(([id]) => id === 's1'), true)
+  })
+})
+
+test('增补新建会话拒绝重复请求并保留创建期间到达的用户消息', async t => {
+  const host = await start()
+  t.after(host.stop)
+  let release
+  let entered
+  const creating = new Promise(resolve => { entered = resolve })
+  const create = host.ctx.sessionController.create
+  host.ctx.sessionController.create = async options => {
+    entered()
+    await new Promise(resolve => { release = resolve })
+    return create(options)
+  }
+  const first = host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+  await creating
+  const second = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+  assert.equal(second.ok, false)
+  assert.equal(second.error.code, 'bot/busy')
+  host.agentOf('b').inbox.nextTurn.push(said('late', '切换期间的新消息', 'late-exchange'))
+  release()
+  assert.equal((await first).ok, true)
+  assert.equal(host.created.length, 1)
+  assert.deepEqual(host.agentOf('s1').calls.map(([, message]) => text(message)), ['切换期间的新消息'])
+  assert.deepEqual(inboxTexts(host.agentOf('b')), [])
+})
+
+test('增补新建会话转交失败时把尚未转交的输入留在旧会话，并由恢复流程转交一次', async t => {
+  const host = await start()
+  t.after(host.stop)
+  const ensure = host.rt.ensureCapabilities
+  host.rt.ensureCapabilities = async id => {
+    if (id !== 's1') return ensure(id)
+    const job = [...host.rt.switchJobs()][0]
+    job.carry.push(said('late', '尚未转交的新输入', 'late-exchange'))
+    throw new Error('能力检查暂时失败')
+  }
+  const result = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+  assert.equal(result.ok, true)
+  assert.equal(result.value.sessionId, 's1')
+  assert.deepEqual(inboxTexts(host.agentOf('b')), ['尚未转交的新输入'])
+  assert.deepEqual(host.state().switching, { b: { botId: 'b' } })
+  assert.equal(host.archived.some(([id]) => id === 'b'), false)
+  host.rt.ensureCapabilities = ensure
+  await host.rt.heldBack()
+  assert.deepEqual(host.agentOf('s1').calls.map(([, message]) => text(message)), ['尚未转交的新输入'])
+  assert.deepEqual(inboxTexts(host.agentOf('b')), [])
+  assert.deepEqual(host.state().switching, {})
+})
+
+test('增补新建会话在提交前重验取消、授权与设置变动，失败不归档原会话', async t => {
+  for (const stage of ['cancel', 'authorization', 'settings']) await t.test(stage, async sub => {
+    const host = await start()
+    sub.after(host.stop)
+    const abort = new AbortController()
+    let authorized = true
+    const caller = { authorize: () => authorized ? undefined : { code: 'bot/refused', message: '配对授权已撤销' } }
+    const create = host.ctx.sessionController.create
+    host.ctx.sessionController.create = async options => {
+      const result = await create(options)
+      if (stage === 'cancel') abort.abort()
+      else if (stage === 'authorization') authorized = false
+      else host.rt.botOf('b').effort = 'high'
+      return result
+    }
+    await assert.rejects(host.rt.extraEndpoint('extra-new-session', { botId: 'b', sessionId: 'b' }, abort.signal, caller),
+      error => error.code === (stage === 'settings' ? 'bot/stale' : 'bot/refused'))
+    assert.equal(host.rt.chatOf('b'), 'b')
+    assert.equal(host.archived.some(([id]) => id === 'b'), false)
+    assert.equal(host.archived.some(([id]) => id === 's1'), true)
+  })
+})
+
+test('增补新建会话在归档前迁移定时任务，群聊与后台任务保持原会话', async t => {
+  const host = await start()
+  t.after(host.stop)
+  host.rt.state.rooms.r = { id: 'r', name: '群聊', members: ['b'], sessions: { b: 'group-b' } }
+  host.rt.botOf('b').tasks = [{ id: 'task', sessionId: 'background', status: 'running' }]
+  await host.rt.save()
+  const moved = []
+  host.rt.moveSchedules = async (from, to) => { moved.push([from, to]); assert.equal(host.archived.length, 0) }
+  assert.equal((await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })).ok, true)
+  assert.deepEqual(moved, [['b', 's1']])
+  assert.equal(host.state().rooms.r.sessions.b, 'group-b')
+  assert.equal(host.state().bots.b.tasks[0].sessionId, 'background')
+})
+
+test('增补新建会话的定时迁移失败时保留恢复标记且不归档旧会话', async t => {
+  const host = await start()
+  t.after(host.stop)
+  host.rt.moveSchedules = async () => { throw new Error('定时任务暂不可用') }
+  const result = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+  assert.equal(result.ok, true)
+  assert.equal(result.value.sessionId, 's1')
+  assert.deepEqual(host.state().switching, { b: { botId: 'b' } })
+  assert.equal(host.archived.some(([id]) => id === 'b'), false)
+})
+
 test('a configured small output limit is an ordinary cutoff, including reasoning-only output', async t => {
   const host = await start({ services: cutOffServices })
   t.after(host.stop)

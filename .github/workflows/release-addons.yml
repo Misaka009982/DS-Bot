@@ -1,0 +1,112 @@
+name: 增补版 npm 安装包
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-addons-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  baseline:
+    name: 原版正式提交独立验证
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'addons-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: d104d9ca18d69a35460f14e15dff4d553181433a
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: link
+      - run: npm ci
+        working-directory: ds-bot
+      - run: npm run harness
+        working-directory: ds-bot
+      - run: npm test
+        working-directory: ds-bot
+      - run: npm run lint
+        working-directory: ds-bot
+      - run: npm run typecheck
+        working-directory: link
+      - run: npm test
+        working-directory: link
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run typecheck
+        working-directory: mobile
+      - run: npm test
+        working-directory: mobile
+
+  addons:
+    name: 增补版验证与 npm pack
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'addons-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node addons/check.mjs
+      - name: 检查发布 tag
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node --input-type=module -e "import fs from 'node:fs'; const m = JSON.parse(fs.readFileSync('addons/manifest.json', 'utf8')); if (process.env.RELEASE_TAG !== m.releaseTag) throw new Error('发布 tag 与增补清单不一致');"
+      - run: npm ci
+        working-directory: link
+      - run: npm ci
+        working-directory: ds-bot
+      - run: npm run harness
+        working-directory: ds-bot
+      # 源码交付不手工改生成文件，由 CI 在验证和打包前统一生成。
+      - run: npm run build
+        working-directory: ds-bot
+      - run: npm test
+        working-directory: ds-bot
+      - run: npm run lint
+        working-directory: ds-bot
+      - run: npm run typecheck
+        working-directory: link
+      - run: npm test
+        working-directory: link
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run typecheck
+        working-directory: mobile
+      - run: npm test
+        working-directory: mobile
+      - run: node addons/pack.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ds-bot-addons-npm
+          path: dist-addons/*
+          if-no-files-found: error
+
+  release:
+    name: 仅上传 GitHub Releases
+    if: github.event_name == 'release'
+    needs: [baseline, addons]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ds-bot-addons-npm
+          path: packages
+      - name: 附加 npm 安装包和 SHA256
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$RELEASE_TAG" packages/*

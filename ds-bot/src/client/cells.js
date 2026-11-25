@@ -16,6 +16,7 @@ import { HandoffCall } from './handoff-card.js'
 import { AppAccessCall, ComputerCallRow, ComputerHandoffCall } from './computer.js'
 import { mdLabels, t } from './i18n.js'
 import { call } from './api.js'
+import { MessageNote, NativeTools, ToolSteps } from './extras/tools.js'
 import { failureLabel } from './diagnostics.js'
 import { turnReasoning, thinkingStep, opensReply, stepActivity } from './turn-reasoning.js'
 import { compressedRelayPreview, parseReplies, relayRange, stackReplies } from '../shared/group-replies.js'
@@ -632,6 +633,9 @@ export function ChatRows({ items, sessionId, roster, actions, useUi, clock = fal
 // `useUi` gives a block its reactions and its Reply tool.
 function chatRow(row, key, { sessionId, selfId, roster, actions, useUi, onBtwDelete }) {
   switch (row.kind) {
+    case 'steps': return h(ToolSteps, { key, entry: row, fullMessages: roster.extras?.fullMessages === true })
+    case 'internal':
+    case 'diagnostic': return h(MessageNote, { key, item: row })
     case 'divider': return h(PartLine, { key, time: row.time })
     case 'user': return h(EarlierUser, { key, row, actions })
     case 'answer': return h(AnsweredReply, { key, node: { data: row } })
@@ -1304,7 +1308,9 @@ export function ToolCell({ node, sessionId, useRoster, useUi, useWork, useHeldCa
   // A running tool shows only as the activity row's phrase.
   useLiveNote(actions, sessionId, `tool:${root.callId ?? node.key}`, note)
   useShownCards(actions, sessionId, drawn.filter(call => (CARDS.has(toolName(call)) || isComputerCall(toolName(call))) && call.callId).map(call => call.callId))
-  if (drawn.length === 0) return h(CellEmpty)
+  const summary = !hidden && roster.extras?.schema === 1
+    ? h(NativeTools, { calls: calls.map(call => ({ ...call, name: toolName(call) })), sessionId, turn }) : null
+  if (drawn.length === 0 && summary === null) return h(CellEmpty)
   const env = { sessionId, roster, actions, useUi, useWork, findBot, heldCards, hooks: { useBrowserHolds, useBrowserTabs, useBrowserPages, useComputer } }
-  return h(Fragment, null, drawn.map((call, index) => h(Fragment, { key: call.callId ?? index }, renderCall(call, env))))
+  return h(Fragment, null, drawn.map((call, index) => h(Fragment, { key: call.callId ?? index }, renderCall(call, env))), summary)
 }

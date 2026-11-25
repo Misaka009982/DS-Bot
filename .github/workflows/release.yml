@@ -41,6 +41,8 @@ jobs:
   # Fast pre-flight gate (~5 s) so invalid tags or mismatched versions fail immediately
   # without blocking the platform build jobs behind npm tests.
   validate:
+    # 派生仓库的增补只走 release-addons.yml；不会使用上游的 npm Trusted Publishing。
+    if: github.repository == 'Fei2411/DS-Bot' && !startsWith(github.event.release.tag_name, 'addons-v')
     name: Validate release metadata
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -176,6 +176,10 @@ jobs:
       - name: Install DSH test harness
         if: steps.harness-cache.outputs.cache-hit != 'true'
         run: npm run harness
+      # 增补以源码交付，只在增补清单存在时生成；原版仍验证已提交的生成文件。
+      - name: 生成增补客户端
+        if: ${{ hashFiles('addons/manifest.json') != '' }}
+        run: npm run build
       - run: npm test
       - name: Lint
         if: matrix.lint
@@ -225,6 +229,10 @@ jobs:
       - name: Install DSH test harness
         if: steps.harness-cache.outputs.cache-hit != 'true'
         run: npm run harness
+      # Node 22 同样先生成增补客户端，不绕过测试的生成文件一致性检查。
+      - name: 生成增补客户端
+        if: ${{ hashFiles('addons/manifest.json') != '' }}
+        run: npm run build
       - run: npm test
 
   scan:

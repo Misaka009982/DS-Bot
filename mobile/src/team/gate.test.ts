@@ -46,3 +46,14 @@ test('learning answers require device unlock, including cancellation and no scre
   await assert.rejects(ensureUnlock('learning-answer'), { code: 'unlock/unavailable' })
   assert.equal(auth.prompts, 2)
 })
+
+test('增补权限修改每次都需要原生解锁，不能复用上一次成功', async () => {
+  auth.level = 1
+  auth.success = true
+  const before = auth.prompts
+  await ensureUnlock('extra-permission-write')
+  await ensureUnlock('extra-permission-write')
+  assert.equal(auth.prompts, before + 2)
+  auth.success = false
+  await assert.rejects(ensureUnlock('extra-permission-write'), { code: 'unlock/canceled' })
+})

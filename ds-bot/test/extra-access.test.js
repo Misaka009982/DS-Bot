@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { fullMessagesAllowed, remoteExtras } from '../src/host/extras/access.js'
+import { install as installPrompt } from '../src/host/extras/prompt.js'
+
+const device = { deviceId: 'device', identityKey: 'public-key', pairedAt: 10, kind: 'browser', name: 'DSBotDeck（Windows）' }
+const settings = { deviceAccess: { device: { identityKey: 'public-key', pairedAt: 10, fullMessages: true } } }
+
+test('完整消息授权绑定公钥及配对时间，名称不参与授权', () => {
+  assert.equal(fullMessagesAllowed({}, device), false)
+  assert.equal(fullMessagesAllowed(settings, device), true)
+  assert.equal(fullMessagesAllowed(settings, { ...device, name: 'Changed' }), true)
+  assert.equal(fullMessagesAllowed(settings, { ...device, identityKey: 'other-key' }), false)
+  assert.equal(fullMessagesAllowed(settings, { ...device, pairedAt: 11 }), false)
+  assert.equal(fullMessagesAllowed(settings, undefined), false)
+  assert.equal(fullMessagesAllowed(settings, { ...device, kind: 'gateway' }), false)
+  assert.equal(remoteExtras({ extras: { fullMessages: true, schema: 1 } }, settings, undefined).extras.fullMessages, false)
+})
+
+test('基础插话模式在异步 inbox 插入期间保留，并发请求不会相互污染', async () => {
+  const bot = { id: 'bot' }
+  const rt = { chatOwners: new Map([['current', 'bot']]), taskOwners: new Map(), groupOwners: new Map(), botOf: id => id === 'bot' ? bot : undefined, selfOf: () => 'bot' }
+  installPrompt(rt)
+  assert.equal(rt.extraKeepForeground('current'), false)
+  await rt.extraSendPrompt({ sessionId: 'current', mode: 'steer' }, async request => {
+    await Promise.resolve()
+    assert.equal(request.mode, 'steer')
+    assert.equal(rt.extraKeepForeground('current'), true)
+    assert.equal(rt.extraKeepForeground('another'), false)
+  })
+  assert.equal(rt.extraKeepForeground('current'), false)
+  bot.extras = { messageMode: 'queue' }
+  await rt.extraSendPrompt({ sessionId: 'current', mode: 'steer' }, async request => assert.equal(request.mode, 'queue'))
+})

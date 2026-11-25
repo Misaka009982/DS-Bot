@@ -8,6 +8,7 @@ import { SPRING_TAP, spring, useMorph } from './motion.js'
 import { sendsOnEnter } from './enter-key.js'
 import { relativeShort } from './text.js'
 import { hostText, mdLabels, t } from './i18n.js'
+import { MessageNote, ToolSteps } from './extras/tools.js'
 
 // -------------------------------------------------------------------------
 // Background tasks UI (#783):
@@ -397,7 +398,7 @@ export function TaskReaderView({ bot, task, actions }) {
   const [page, setPage] = useState(null)
   const [older, setOlder] = useState([])
   const [olderCursor, setOlderCursor] = useState({ active: false, cursor: null })
-  const [showSteps, setShowSteps] = useState(false)
+  const [showSteps, setShowSteps] = useState(true)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -541,13 +542,11 @@ export function TaskReaderView({ bot, task, actions }) {
                 return h('div', { key, className: 'bt-tread-row is-user' },
                   h('div', { className: 'bt-tread-user' }, entry.text ?? ''))
               }
+              if (entry.kind === 'internal' || entry.kind === 'diagnostic') return h(MessageNote, { key, item: entry })
               if (entry.kind === 'steps') {
                 const tools = Array.isArray(entry.tools) ? entry.tools : []
                 if (!showSteps || tools.length === 0) return null
-                return h('div', { key, className: 'bt-tread-steps' },
-                  tools.map((tool, sIdx) => h('div', { key: sIdx, className: 'bt-tread-step', 'data-ok': tool.ok === false ? 'false' : undefined },
-                    h('span', { className: 'bt-tread-step-dot', 'aria-hidden': true }),
-                    h('span', { className: 'bt-tread-step-name' }, tool.label || tool.name || 'tool'))))
+                return h(ToolSteps, { key, entry })
               }
               if (entry.kind === 'bot') {
                 return entry.text

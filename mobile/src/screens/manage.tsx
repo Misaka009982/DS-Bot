@@ -20,6 +20,7 @@ import { inkColor, radius, shadow, type as typeScale, useTheme, type Palette } f
 import type { Bot, Room, TeamState } from '../connection.ts'
 import { capabilityStatusText } from '../team/capabilities.ts'
 import { ModelMenu, ModelPicker } from './model-menu.tsx'
+import { BotExtras, PermissionChoices } from '../extras/settings.tsx'
 
 export const SHAPES = ['acorn', 'berry', 'bunny', 'gem', 'gumdrop', 'kitty', 'moon', 'peanut', 'star', 'wave']
 export const COLORS = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray', 'aurora']
@@ -240,7 +241,8 @@ export function BotDetails({ route, navigation }: any) {
         {permissions?.options && permissions.options.length > 0 ? (
           <>
             <DetailTitle text={t('Permissions')} />
-            <PermissionPicker options={permissions.options} saved={bot.permission ?? permissions.defaultPreset} onPick={permission => void run('update-bot', { id: bot.id, permission })} />
+            {team?.extras?.schema === 1 ? <PermissionChoices bot={bot} />
+              : <PermissionPicker options={permissions.options} saved={bot.permission ?? permissions.defaultPreset} onPick={permission => void run('update-bot', { id: bot.id, permission })} />}
           </>
         ) : null}
         <DetailTitle text={t('Working folder')} />
@@ -456,6 +458,8 @@ export function BotEdit({ route, navigation }: any) {
               on={main} onChange={next => void run('set-main', { id: bot.id, main: next })} />
           </Section>
         )}
+        {team?.extras?.schema === 1 ? <Section label={t('Permissions')}><PermissionChoices bot={bot} /></Section> : null}
+        <BotExtras bot={bot} />
         <BotCapabilities bot={bot} team={team} run={run} />
         <Section label={t('Bot')}>
           {bot.private === true ? null : <Row label={t('Duplicate')} hint={t('A copy with the same job and model, and fresh memory.')} onPress={() => void run('duplicate-bot', { id: bot.id }, value => open({ kind: 'bot', id: (value as Bot).id }))} />}
@@ -630,6 +634,7 @@ export function GroupSettings({ route, navigation }: any) {
               options={ROOM_MODES.map(([id, label]) => ({ id, label: t(label) }))} />
           </View>
         </Section>
+        {team?.extras?.schema === 1 ? <Section label={t('Permissions')}><PermissionChoices room={room} /></Section> : null}
         <Section label={t('Working folder')}>
           <Row label={t('Folder')} value={room.workDir ? folderName(room.workDir) : t("Each Bot's own folder")}
             onPress={() => navigation.navigate('Folder', { current: room.workDir, onPick: 'room', roomId: room.id })} />

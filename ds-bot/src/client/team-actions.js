@@ -91,7 +91,9 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
     },
     stopTask: (botId, taskId) => after(call('bot-stop-task', { botId, taskId })),
     sendTask: (botId, taskId, text) => after(call('bot-task-send', { botId, taskId, text })),
-    readTask: (botId, taskId, cursor, steps = false) => call('bot-task-read', { botId, taskId, ...(cursor ? { cursor } : {}), ...(steps ? { steps: true } : {}) }),
+    readTask: (botId, taskId, cursor, steps = false) => call(roster.getSnapshot().extras?.schema === 1 ? 'extra-task-read' : 'bot-task-read', {
+      botId, taskId, ...(cursor ? { cursor } : {}), ...(steps ? { steps: true } : {}),
+    }),
     // A side chat on the panel's own view, opened from the strip, the `···`
     // menus or `/side`. Closing the panel keeps the chats; only a tab's × deletes.
     openSideChat,
@@ -170,6 +172,9 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
     deleteAvatar: id => call('avatar-delete', { id }),
     createRoom: (members, options = {}) => after(call('create-room', { members, ...options })),
     updateBot: (id, patch) => after(call('update-bot', { id, ...patch })),
+    extraSetBot: (id, patch) => after(call('extra-bot-set', { id, ...patch })),
+    extraNewSession: (botId, sessionId) => after(call('extra-new-session', { botId, sessionId })),
+    extraPhoneSet: body => after(call('phone-extra-set', body)),
     // Give up one wait the Bot has on a hand-off that will not come back.
     abandonWork: id => after(call('abandon-work', { id })),
     refreshModels: () => after(call('models')).catch(() => {}),

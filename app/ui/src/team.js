@@ -125,6 +125,7 @@ export function createTeam() {
     const current = roster.getSnapshot()
     const changed = {}
     if (value.connectors !== undefined && JSON.stringify(value.connectors) !== JSON.stringify(current.connectors ?? [])) changed.connectors = value.connectors
+    if (value.extras !== undefined && JSON.stringify(value.extras) !== JSON.stringify(current.extras ?? null)) changed.extras = value.extras
     if (value.capabilityStatuses !== undefined && JSON.stringify(value.capabilityStatuses) !== JSON.stringify(current.capabilityStatuses ?? {})) changed.capabilityStatuses = value.capabilityStatuses
     if (Object.keys(changed).length > 0 && current.ready) roster.set({ ...current, ...changed })
     if (value.unchanged || (value.revision === current.revision && value.modelsKey === current.modelsKey)) return

@@ -843,6 +843,18 @@ test('PTC secret and question cards show at their sub-calls and act on their own
   assert.equal(shown(program([call('ask_user', 'call-1-2:ptc:1')]), { roster: team() }), '')
 })
 
+test('增补能力存在时普通工具有折叠摘要，旧服务器和隐藏回合仍保留原显示', () => {
+  const roster = team({ extras: { schema: 1 } })
+  const extra = show(call('bash', 'shell-call'), { roster })
+  const summary = find(extra, node => node.type === 'summary')
+  assert.match(text(summary), /Used 1 tools/)
+  assert.equal(find(extra, node => node.type === 'pre'), undefined)
+  assert.ok(emptied(ToolCell(props(call('bash', 'legacy-call')))))
+  const hidden = team({ extras: { schema: 1 }, exchangeTurns: { chief: [1] } })
+  assert.equal(shown(call('bash', 'hidden-call'), { roster: hidden }), '')
+  effects = []
+})
+
 // #133: a DSH goal round showed its raw <goal_round> prompt as an event line.
 test('a goal round draws nothing, while another unknown trigger keeps its event line', () => {
   const trigger = source => expand(TriggerCell({

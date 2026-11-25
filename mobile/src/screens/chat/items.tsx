@@ -14,6 +14,8 @@ import { useTeam } from '../../team/context.tsx'
 import { ViewCard } from './view.tsx'
 import { handoffTitleOf, relayReplyText, roundEventText, settledQuestionPicks, stripLongNote, type RelayReplyData, type SettledQuestionData } from './settled.ts'
 import { viewAnswerText } from 'deep-view/core'
+import { MessageNote, ToolSteps } from '../../extras/tools.tsx'
+import type { ToolSummary } from '../../extras/types.ts'
 
 export interface ImageRef { attachmentId: string; mime?: string; name?: string }
 
@@ -23,7 +25,8 @@ export type { SettledQuestionData }
 
 export interface ChatItem {
   id?: string
-  kind: 'bot' | 'user' | 'event' | 'answer' | 'view' | 'divider' | 'steps' | 'closed' | 'post' | 'relay'
+  kind: 'bot' | 'user' | 'event' | 'answer' | 'view' | 'divider' | 'steps' | 'closed' | 'post' | 'relay' | 'internal' | 'diagnostic' | 'task-brief'
+  detail?: string
   text?: string
   time?: number
   seq?: number
@@ -52,7 +55,7 @@ export interface ChatItem {
   handoff?: { reason?: string; note?: string; outcome?: string }
   reply?: RelayReplyData
   answers?: { id?: string; action?: string; values?: { selected?: string[]; inputs?: Record<string, unknown>; fields?: Record<string, string>; confirmed?: boolean }; selected?: string[]; custom?: string }[]
-  tools?: { name: string; label?: string | null; ok?: boolean }[]
+  tools?: ToolSummary[]
   ms?: number
   live?: boolean
   texts?: string[]
@@ -120,7 +123,8 @@ export const Item = memo(function Item({ item, p, flat, maxWidth, inRoom, sessio
     ? item.answers.map(answer => [...(answer.selected ?? []), ...(answer.custom ? [answer.custom] : [])].join(', ')).join('\n')
     : bodyJoined
   const longPress = () => { void Haptics.selectionAsync(); onLongPress?.(source) }
-  if (item.kind === 'steps') return <Steps item={item} p={p} open={open === true} onToggle={onToggle ?? (() => {})} />
+  if (item.kind === 'internal' || item.kind === 'diagnostic') return <MessageNote item={item} />
+  if (item.kind === 'steps') return <Steps item={item} sessionId={rowSessionId} p={p} open={open === true} onToggle={onToggle ?? (() => {})} />
   if (item.kind === 'divider') {
     const label = typeof item.time === 'number' ? clockLabel(item.time) : ''
     return (
@@ -507,23 +511,8 @@ export function Actions({ visible, text, p, onClose, onSelect }: { visible: bool
 }
 
 // One folded caption row per turn: a tap lists what the tools did.
-function Steps({ item, p, open, onToggle }: { item: ChatItem; p: Palette; open: boolean; onToggle: () => void }) {
-  const tools = item.tools ?? []
-  const seconds = typeof item.ms === 'number' ? Math.round(item.ms / 1000) : undefined
-  return (
-    <View style={{ alignSelf: 'center', marginVertical: 4, maxWidth: '92%' }}>
-      <Pressable accessibilityRole="button" onPress={onToggle} style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-        <Text style={[type.caption, { color: p.ink3, textAlign: 'center' }]}>
-          {tools.length === 1 ? t('Used {count} tool', { count: tools.length }) : t('Used {count} tools', { count: tools.length })}{seconds !== undefined && seconds > 0 ? t(' · thought for {seconds}s', { seconds }) : ''}
-        </Text>
-      </Pressable>
-      {open ? tools.map((tool, index) => (
-        <Text key={`${tool.name}-${index}`} style={[type.caption, { color: p.ink2, textAlign: 'center' }]}>
-          {(tool.label ? t(tool.label) : undefined) ?? tool.name}{tool.ok === false ? t(' — failed') : ''}
-        </Text>
-      )) : null}
-    </View>
-  )
+function Steps({ item, sessionId, open, onToggle }: { item: ChatItem; sessionId?: string; p: Palette; open: boolean; onToggle: () => void }) {
+  return <ToolSteps item={item} sessionId={sessionId} open={open} onToggle={onToggle} />
 }
 
 const styles = StyleSheet.create({

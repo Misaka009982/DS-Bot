@@ -21,6 +21,7 @@ import { learningForChat } from './chat/learning.ts'
 import { Composer, type Photo } from './chat/composer.tsx'
 import { Actions, Item, keysOf, PhotoViewer, PhotoViewerCtx, type ChatItem, type FileRef, type ImageRef } from './chat/items.tsx'
 import { bumpMarkdownImageCache } from './chat/markdown.tsx'
+import { ChatTasks } from '../extras/tasks.tsx'
 
 // Feed events refresh the chat as things happen; the poll only catches what a
 // dropped event missed, so it runs rarely.
@@ -128,7 +129,8 @@ export function ChatView({ bot, room, agent, header, onMissing }: { bot?: Bot; r
   const insets = useSafeAreaInsets()
   const kind: ChatKind = room !== undefined ? 'room' : agent !== undefined ? 'agent' : 'bot'
   const id = bot?.id ?? room?.id ?? agent?.id ?? ''
-  const chatKey = `${computer?.hostDeviceId ?? ''}:${kind}:${id}`
+  const messageScope = `${team?.extras?.schema ?? 0}:${team?.extras?.fullMessages === true ? 'full' : 'basic'}`
+  const chatKey = `${computer?.hostDeviceId ?? ''}:${kind}:${id}:${messageScope}`
   const cached = pages.get(chatKey)
   const [pageState, setPageState] = useState<{ key: string; page: ChatPage | null; older: ChatItem[] }>(() => ({
     key: chatKey,
@@ -156,6 +158,12 @@ export function ChatView({ bot, room, agent, header, onMissing }: { bot?: Bot; r
   // A DSH Agent's chat is one Session; a new one starts over, older pages and all.
   const shownSession = useRef<string | undefined>(cached?.page?.sessionId)
 
+  useEffect(() => {
+    pages.clear()
+    reads.clear()
+    setOpenSteps({})
+    toggles.current.clear()
+  }, [computer?.hostKey, messageScope])
   useEffect(() => {
     prevSigRef.current = ''
   }, [chatKey])
@@ -385,6 +393,7 @@ export function ChatView({ bot, room, agent, header, onMissing }: { bot?: Bot; r
     const gen = generation.current
     return onFeed((event, data) => {
       if (generation.current !== gen) return
+      if (event === 'extra-update' && (data?.sessionId === sessionId || data?.botId === bot?.id || data?.roomId === room?.id)) void refresh(gen)
       if (event === 'room' && room !== undefined && data?.roomId === room.id) { void refresh(gen); if (hasChatPending) refreshTeam?.() }
       if (event === 'message' && data?.sessionId === sessionId) {
         const item = data.item
@@ -497,6 +506,7 @@ export function ChatView({ bot, room, agent, header, onMissing }: { bot?: Bot; r
     <PhotoViewerCtx.Provider value={setPhotos}>
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={KEYBOARD_GAP - insets.bottom} style={[styles.screen, { backgroundColor: p.main }]}>
       {header}
+      <ChatTasks key={`${computer?.hostKey}:${messageScope}:${id}`} bot={bot} room={room} />
       {room !== undefined && (room as { goal?: Goal }).goal ? <GoalBar goal={(room as { goal?: Goal }).goal!} p={p} /> : null}
       {activeTasks.length > 0 ? <TasksBar tasks={activeTasks} inRoom={inRoom} call={call} p={p} /> : null}
       <View style={styles.list} onLayout={event => setChatWidth(event.nativeEvent.layout.width - 24)}>

@@ -3,6 +3,8 @@ import qrcode from 'qrcode-generator'
 import { Switch } from './bot-settings.js'
 import { dateLocale, t } from './i18n.js'
 import { browserPairingUrl } from './phone-browser.js'
+import { deviceLabel } from './extras/device-name.js'
+import { DeviceMessages, RemoteAuthorization } from './extras/settings.js'
 
 const OFF = { server: '', on: false, status: 'off', phones: [], pairing: null }
 // The quiet zone around a QR code is part of the code: scanners need it to find the edges.
@@ -167,11 +169,12 @@ export function PhonePage({ roster, actions, Section, Row }) {
           : h('button', { type: 'button', className: 'bt-send bt-soft-sm', disabled: busy, onClick: startPair }, online ? t('Show QR code') : t('Turn on & pair'))),
       h(Row, { key: 'app', label: t('Android beta') },
         h('a', { className: 'bt-soft bt-soft-sm', href: APP_DOWNLOAD, target: '_blank', rel: 'noopener noreferrer' }, t('Download')))),
+    h('div', { className: 'bt-extra-phone-authorization' }, h(RemoteAuthorization, { roster, actions, Row, Switch, run })),
     h(Section, { title: t('Phones') }, phone.phones.length === 0
       ? h('div', { className: 'bt-set-row' }, h('span', { className: 'bt-set-hint' }, t('No phones yet')))
-      : phone.phones.map(entry => h(Row, {
-        key: entry.id,
-        label: entry.kind === 'browser' ? t('Web browser') : entry.name || t('Phone'),
+      : phone.phones.map(entry => h('div', { key: entry.id }, h(Row, {
+        label: deviceLabel(entry, t),
         hint: entry.connected ? t('Connected') : t('Paired on {date}', { date: new Date(entry.pairedAt).toLocaleDateString(dateLocale(), { dateStyle: 'medium' }) }),
-      }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.phoneRemove(entry.id)) }, t('Remove'))))))
+      }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.phoneRemove(entry.id)) }, t('Remove'))),
+      roster.extras?.schema === 1 ? h(DeviceMessages, { entry, actions, Switch, run }) : null))))
 }

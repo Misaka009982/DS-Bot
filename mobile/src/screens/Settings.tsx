@@ -6,6 +6,7 @@ import { t, getLang, setLang } from '../ui/i18n.ts'
 import { ChevronRightIcon } from '../ui/icons.tsx'
 import { readPrefs, writePrefs } from '../store.ts'
 import { radius, shadow, type as typeScale, useTheme } from '../ui/tokens.ts'
+import { PermissionSafetySwitch } from '../extras/settings.tsx'
 
 function Row({ label, value, onPress, end }: { label: string; value?: string; onPress?: () => void; end?: React.ReactNode }) {
   const { p } = useTheme()
@@ -92,6 +93,7 @@ export function Settings({ navigation }: { navigation?: any }) {
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
       <Section label={t('Phone')}>
+        <PermissionSafetySwitch />
         <Row label={t('Computers')} value={computer?.name ?? ''} onPress={() => navigation?.navigate('Computers')} />
         <Choice label={t('Appearance')} value={theme as 'system' | 'light' | 'dark'} onPick={next => set('theme', next)}
           options={[{ id: 'system', label: t('System') }, { id: 'light', label: t('Light') }, { id: 'dark', label: t('Dark') }]} />

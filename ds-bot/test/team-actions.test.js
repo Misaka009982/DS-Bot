@@ -54,6 +54,13 @@ test('Retry after a failed turn asks the host to resume the Bot, with nothing bu
   assert.equal(pulls(), 1)
 })
 
+test('增补新建会话传入用户确认的 Session，成功后刷新团队状态', async () => {
+  const { actions, sent, pulls } = bench()
+  await actions.extraNewSession('chief', 'current-part')
+  assert.deepEqual(sent, [['extra-new-session', { botId: 'chief', sessionId: 'current-part' }]])
+  assert.equal(pulls(), 1)
+})
+
 test('openModels opens DS Bot settings on the Models page and closes the menus', () => {
   const { actions, ui } = bench()
   actions.openModels()

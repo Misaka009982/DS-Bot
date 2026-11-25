@@ -156,7 +156,13 @@ export function createRemoteService(rt) {
       if (name === 'folder-pick') {
         return { ok: false, error: { code: 'bot/refused', message: 'Folders are chosen in a window on the computer', details: {} } }
       }
-      return plain(await rt.channelCall(name, payload ?? {}, signal))
+      const result = await rt.channelCall(name, payload ?? {}, signal, {
+        authorize: () => rt.extraRemoteAccessError?.({ kind: 'gateway' }, name, payload),
+        fullMessages: () => false,
+        deviceKind: () => 'gateway',
+      })
+      return plain(result?.ok === true && name === 'state'
+        ? { ...result, value: rt.extraRemoteState?.(result.value) ?? result.value } : result)
     }
 
     feed(signal) {

@@ -8,6 +8,7 @@ import { RelayTransport, RpcClient, SecureTransport, deviceIdFor, generateKeyPai
 import { startRelayServer } from '../../link/server/server.ts'
 import { fakeContext } from './fake-ctx.js'
 import { BROWSER_ALLOWED, DEFAULT_SERVER, install as installPhone, remoteAccessError } from '../src/host/phone.js'
+import { EXTRA_ENDPOINTS } from '../src/host/extras/index.js'
 
 const TEAM = {
   version: 1,
@@ -121,6 +122,30 @@ test('a browser pairs with its own code and is listed by authenticated kind', as
   await link.client.close()
 })
 
+test('完整消息逐设备授权，远程不能修改电脑授权且撤销立即拒绝读取', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'dsb-extra-grant-'))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  const desk = open(home)
+  t.after(async () => { await desk.ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await desk.call('phone-set', { server: server.url, on: true })
+  await until(() => desk.call('state', {}), state => state.value.phone.status === 'online')
+  const paired = await desk.call('phone-pair', {})
+  const offer = parsePairingUri(paired.value.pairing.browserUri)
+  const remote = phone(offer, { pairingCode: offer.code, name: 'DSBotDeck（Windows）' })
+  await remote.client.connect()
+  const read = () => remote.client.rpc('bot', { endpoint: 'extra-status', payload: { fullMessages: true } })
+  assert.equal((await read()).error.code, 'bot/refused')
+  const entry = (await desk.call('state', {})).value.phone.phones[0]
+  assert.equal((await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: true })).ok, true)
+  assert.equal((await read()).value.fullMessages, true)
+  assert.equal((await remote.client.rpc('bot', { endpoint: 'state' })).value.extras.fullMessages, true)
+  assert.equal((await remote.client.rpc('bot', { endpoint: 'phone-extra-set', payload: { remotePermissions: true } })).error.code, 'bot/refused')
+  assert.equal((await remote.client.rpc('bot', { endpoint: 'update-bot', payload: { id: 'm1', permission: 'danger-full-access' } })).error.code, 'bot/refused')
+  await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: false })
+  assert.equal((await read()).error.code, 'bot/refused')
+  await remote.client.close()
+})
+
 test('remote state and live polls never disclose pairing offers, including attached state', async t => {
   const home = mkdtempSync(join(tmpdir(), 'dsb-private-pairing-'))
   const view = { type: 'text', let: { pairing: 'ready', phone: { pairing: 'application data' } }, value: '$pairing' }
@@ -168,6 +193,7 @@ test('the host enforces a default-deny browser allowlist across every channel ro
   const computerSrc = readFileSync(new URL('../src/host/computer/index.js', import.meta.url), 'utf8')
   const gatedSrc = readFileSync(new URL('../../mobile/src/team/gated.ts', import.meta.url), 'utf8')
   const channelRoutes = new Set([...channelSrc.matchAll(/case\s+'([^']+)':/g)].map(match => match[1]))
+  for (const endpoint of EXTRA_ENDPOINTS) channelRoutes.add(endpoint)
   const computerRoutes = [...computerSrc.matchAll(/case\s+'([^']+)':/g)].map(match => `computer-${match[1]}`)
   const gatedRoutes = new Set([...gatedSrc.matchAll(/'([^']+)'/g)].map(match => match[1]))
   const allHostRoutes = new Set([...channelRoutes, ...computerRoutes])

@@ -378,6 +378,23 @@ test('a phone stages photos one by one, then send puts them in one message with 
   await stop()
 })
 
+test('插话模式经过设置和发送接口保留，不再强制进入队列', async t => {
+  const { call, ctx, sent, stop } = start()
+  t.after(stop)
+  const { chief } = await team(call)
+  assert.equal((await call('extra-bot-set', { id: chief, messageMode: 'steer' })).ok, true)
+  await call('send', { sessionId: chief, text: '现在插话', mode: 'queue' })
+  assert.equal(sent.at(-1).prompt.mode, 'steer')
+  await ctx.sessionController.prompt({ sessionId: chief, mode: 'queue', content: [{ type: 'text', text: '原生输入框' }] })
+  assert.equal(sent.at(-1).prompt.mode, 'steer')
+  await call('extra-bot-set', { id: chief, messageMode: 'inherit' })
+  await call('send', { sessionId: chief, text: '跟随基础插话设置', mode: 'steer' })
+  assert.equal(sent.at(-1).prompt.mode, 'steer')
+  await call('extra-bot-set', { id: chief, messageMode: 'queue' })
+  await call('send', { sessionId: chief, text: '等当前回合', mode: 'steer' })
+  assert.equal(sent.at(-1).prompt.mode, 'queue')
+})
+
 test('chat with steps folds the turn tool calls into a steps row after its last text', async () => {
   const { call, history, stop } = start()
   const { chief } = await team(call)
