@@ -151,6 +151,11 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'route POST /api/bot',
     'effect ds-bot: load state',
     'effect ds-bot: local agents',
+    // 独立增补在原模块之后追加，原有登记次序保持不变。
+    'effect ds-bot: 增补输入模式上下文',
+    'effect ds-bot: 增补旧会话归档',
+    'on session/event',
+    'effect ds-bot: 增补消息刷新',
   ])
 })
 

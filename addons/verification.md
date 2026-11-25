@@ -2,7 +2,7 @@
 
 ## 已做／未做
 
-本机只进行 JavaScript 语法、UTF-8／JSON、接入点和代码路径静态核对。没有运行插件、模型、Relay、手机、安装、测试、编译或打包；`client.js`／`link.js` 仍需用户／CI 生成。没有创建 Release 或执行 npm publish；源码提交／推送按用户授权进行，以 Git 历史和远程 `main` 为准。
+本机只进行 JavaScript 语法、手机增补 TSX 结构、UTF-8／JSON、接入点和代码路径静态核对。没有运行插件、模型、Relay、手机、安装、测试、编译或打包；`client.js`／`link.js` 仍需用户／CI 生成。没有创建 Release 或执行 npm publish；源码提交／推送按用户授权进行，以 Git 历史和远程 `main` 为准。
 
 专用多代理／跨模型审查在当前工具环境不可用，采用人工式逐路径静态复核；不是独立审查通过证明。TypeScript 严格类型及 GUI 验收由用户／CI 完成。
 
@@ -17,6 +17,8 @@
 - `extra-observability.test.js`：工具名称、PTC、结果未知、详情脱敏／分页／会话边界、内部消息和真实待办；既有 `tool-cells.test.js` 增加能力门控和折叠摘要断言。
 - `switch-keeps-input.test.js` 的增补用例：干净 Session、配置／历史保留、忙碌拒绝、过期请求、重复点击、迟到消息、转交失败后的恢复、取消／撤销授权、设置竞态、创建／模型／权限／保存失败和定时任务恢复；这些用例穿过实际插件入口、parts 和 store，宿主使用既有 fakeContext。
 - `extra-new-session-ui.test.js`、`team-actions.test.js` 的增补用例：服务器能力门控、二次确认、错误反馈、当前 Session 请求参数、离开页面后不抢导航。
+- `extra-chat-read.test.js`：增强页目标／游标／步骤参数、仅缺失增补接口时回退，授权／网络／其他不存在错误不降级读取。
+- 既有 `install.test.js`：保留原模块顺序并检查增补追加登记；`feed.test.js`：按具名原回调定位，其他监听器追加后仍读到真实 SSE；`app/test/chat.test.mjs`：增强／旧服务器的群聊投影及 SSE 刷新保留已读旧分页。
 - `extra-compatibility.test.js`：正式基线、接入唯一性、Releases-only 发布约束，以及普通主线 CI 在增补清单存在时先生成后测试。
 - `extra-device-name.test.js`、`link/test/pairing-kind.test.ts`：名称优先、旧名称更新、错误公钥不更新、类别不变。
 - 既有 `mobile.test.js`：端到端调用设置与 send 模式；`phone.test.js`：真实加密配对后的授权／撤销链。
@@ -35,7 +37,7 @@
 7. 创建一个未来的定时任务，再新建会话：任务转向新 Session，按时只投递一次；迁移失败时旧会话不归档，重启恢复后可完成迁移。
 8. 第一击后换 Bot／切 Session 或按 Escape：需要重新确认；请求中离开设置页，旧回包不改变新页面。旧服务器不显示入口。
 
-这些新增回归用例尚未运行，没有观察到红／绿结果；按本机环境约束只做静态核查。模型兼容错误是否消失仍需使用实际模型确认，新建会话不会修复模型服务自身的接口错误。
+新建会话的新增回归已在 Actions `45571853126`（`23cdd80e`）的 Linux／Windows Node 24 测试通过；该轮工作流因手机 TSX 语法、登记序列／SSE 定位和桌面接口模拟未适配而失败，不是整体验收通过。本轮修复及新增接口回归仍需 CI／用户复验，本机没有运行测试。模型兼容错误是否消失仍需使用实际模型确认，新建会话不会修复模型服务自身的接口错误。
 
 ### queue／steer
 

@@ -70,7 +70,7 @@ function TaskHistory({ botId, task, close }: { botId: string; task: BotTask; clo
         {page?.cursor != null ? <Pressable accessibilityRole="button" disabled={busy} onPress={() => { void load(true) }} style={{ padding: 10 }}><Text style={{ color: p.accent }}>{text('Load more')}</Text></Pressable> : null}
         {error ? <Text accessibilityRole="alert" style={{ color: p.danger }}>{error}</Text> : null}
         {busy ? <Text style={{ color: p.ink3 }}>{text('Loading…')}</Text> : null}
-        {items.map((item, i) => <Item key={keys[i]} item={item} sessionId={item.sessionId ?? page?.sessionId} p={p} flat maxWidth="100%" inRoom={false} open={open[keys[i]]} onToggle={() => setOpen(prev => ({ ...prev, [keys[i]]: !prev[keys[i]] })) />)}
+        {items.map((item, i) => <Item key={keys[i]} item={item} sessionId={item.sessionId ?? page?.sessionId} p={p} flat maxWidth="100%" inRoom={false} open={open[keys[i]]} onToggle={() => setOpen(prev => ({ ...prev, [keys[i]]: !prev[keys[i]] }))} />)}
       </ScrollView>
     </View>
   </Modal>

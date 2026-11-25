@@ -24,7 +24,7 @@
 | `addons/` | 固定版本、接入检查、打包与用户验收文档 |
 | `.github/workflows/release-addons.yml` | 原版／增补独立验证，npm pack 后上传 Releases |
 
-现有源码的变更集中在 `manifest.json` 的 25 个固定接入文件；测试和发布门禁另行列出。不能只复制 `extras/` 而遗漏这些接入点。
+现有源码的变更集中在 `manifest.json` 的 26 个固定接入文件；测试和发布门禁另行列出。不能只复制 `extras/` 而遗漏这些接入点。
 
 ## 原文件接入点
 
@@ -38,6 +38,7 @@
 | `host/remote.js` | Gateway 不得冒充已配对设备，不得修改电脑授权 |
 | `host/parts.js` | 可选增强投影／工具字段、旧段冷读取；新建会话只替换上下文准备，复用原切段锁／转交／恢复；默认旧格式不变 |
 | `host/mobile.js` | 群聊增强投影和旧群段冷读取 |
+| `host/feed.js` | 稳定命名原 SSE 会话事件回调供测试定位，不新增监听器、不改变消息发布或权限 |
 | `shared/browser-endpoints.js` | 只新增明确的增补端点，原敏感接口不放开 |
 | `client/bot-settings.js`、`phone-page.js` | 额外卡片／设备授权与名称显示，Manage 插入新建会话行 |
 | `client/team-actions.js` | 设置方法、携带当前 Session 的新建请求与后台任务增强读取 |
@@ -58,7 +59,7 @@
 
 1. 用户明确选定下一份正式 Release，记录 tag 与完整提交。
 2. 在独立干净目录验证原版插件、link、手机与桌面构建；不要先带入增补。
-3. 比较 25 个接入文件的语义，尤其 prompt、inbox、归档／卸载、配对、错误事件、PTC 与分页契约。锚点文本相同也不代表语义兼容。
+3. 比较 26 个接入文件的语义，尤其 prompt、inbox、归档／卸载、配对、错误事件、PTC 与分页契约。锚点文本相同也不代表语义兼容。
 4. 只移植独立目录和逐个固定接入点。未知协议／任务状态应失败或跳过，不静默猜测。
 5. 更新 `manifest.json`、检查脚本、固定测试及 release workflow 中原版 checkout 的 SHA；重新编号增补／包版本。
 6. 重新生成 `client.js`／`link.js`／`office.js`，运行双方独立验证。若原版失败，优先定位上游／环境；原版成功而增补失败，再定位增补。

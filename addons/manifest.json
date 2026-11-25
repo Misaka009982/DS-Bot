@@ -22,6 +22,7 @@
     { "path": "ds-bot/src/host/remote.js", "anchor": "rt.extraRemoteAccessError?." },
     { "path": "ds-bot/src/host/parts.js", "anchor": "rt.extraStepsItems(events", "anchors": ["if (job.fresh) return rt.extraMoveToFreshPart", "rt.extraStartFreshPart ="] },
     { "path": "ds-bot/src/host/mobile.js", "anchor": "rt.extraProjectMessages?." },
+    { "path": "ds-bot/src/host/feed.js", "anchor": "function onFeedSessionEvent(session, event)" },
     { "path": "ds-bot/src/shared/browser-endpoints.js", "anchor": "'extra-status', 'extra-tool-detail'", "anchors": ["'extra-new-session'"] },
     { "path": "ds-bot/src/client/bot-settings.js", "anchor": "h(BotExtras, {", "anchors": ["h(NewSessionRow, {"] },
     { "path": "ds-bot/src/client/phone-page.js", "anchor": "h(DeviceMessages, {" },

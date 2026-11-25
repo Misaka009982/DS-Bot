@@ -72,7 +72,7 @@ export function install(rt) {
     if (rt.selfOf(agent.id) !== undefined || rt.agentOf?.(agent.id) !== undefined) live()
   })
 
-  ctx.on('session/event', (session, event) => {
+  ctx.on('session/event', function onFeedSessionEvent(session, event) {
     if (!listening()) return
     const botId = rt.chatOwners.get(session.id)
     if (botId === undefined) return

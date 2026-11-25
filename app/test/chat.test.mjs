@@ -278,7 +278,7 @@ function mountRoom(callImpl) {
   }
 }
 
-test('group chat adapts room-chat bot/event items to post/relay and preserves earlier pages across room SSE refreshes', async () => {
+for (const endpoint of ['extra-messages', 'room-chat']) test(`群聊通过 ${endpoint} 读取并在 SSE 刷新后保留旧分页`, async () => {
   let latestItems = [
     { id: '3', kind: 'bot', botId: 'b1', name: 'Alpha', color: 'blue', text: 'First', time: 300 },
     { id: '4', kind: 'event', event: 'done', botId: 'b1', name: 'Alpha', color: 'blue', time: 400 },
@@ -288,7 +288,12 @@ test('group chat adapts room-chat bot/event items to post/relay and preserves ea
     { id: '2', kind: 'bot', botId: 'b2', name: 'Beta', color: 'green', text: 'Older reply', time: 200 },
   ]
   const room = mountRoom(async (name, body) => {
-    assert.equal(name, 'room-chat')
+    if (name === 'extra-messages' && endpoint === 'room-chat') {
+      throw Object.assign(new Error('Unknown endpoint extra-messages'), { code: 'bot/not-found' })
+    }
+    assert.equal(name, endpoint)
+    assert.equal(body.roomId, 'r1')
+    assert.equal(body.steps, true)
     if (body.cursor) return { roomId: 'r1', items: earlierItems, cursor: null }
     return { roomId: 'r1', items: latestItems, cursor: { part: 0, beforeSeq: 3 } }
   })

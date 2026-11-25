@@ -73,6 +73,12 @@ function reader(response) {
   }
 }
 
+function feedSessionEvent(ctx) {
+  const listener = ctx.listeners.get('session/event')?.find(callback => callback.name === 'onFeedSessionEvent')
+  assert.equal(typeof listener, 'function', 'SSE 会话事件监听器必须有稳定名称')
+  return listener
+}
+
 test('state and live feed keep question and view routing metadata private', async (t) => {
   const imOrigin = { connId: 'private-connection', chatKey: 'private-chat', binding: 'room:r1' }
   const question = { id: 'q1', question: 'Which?', options: [{ label: 'A' }] }
@@ -112,8 +118,9 @@ test('the live feed tells a window about saves, new chat entries and the reply b
   assert.equal(saved.event, 'revision')
   assert.equal(saved.data.revision > TEAM.revision, true)
 
-  // The feed's own listener sits right before im's on session/event; the others need a live dsh.
-  const onEvent = ctx.listeners.get('session/event').at(-2)
+  // 增补或其他模块可继续追加监听器，不能按倒数位置猜测 feed 回调。
+  ctx.on('session/event', () => {})
+  const onEvent = feedSessionEvent(ctx)
   onEvent({ id: 'm1c' }, userMessage('hello', 60))
   assert.deepEqual(await next(), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: { kind: 'user', text: 'hello', time: 60 } } })
   // A group Session or an earlier part is not a Bot's own chat now.
@@ -165,7 +172,7 @@ test('a window that stops reading the feed is dropped', { timeout: 10_000 }, asy
   t.after(stop)
   await call('state')
   const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed'))
-  const onEvent = ctx.listeners.get('session/event').at(-2)
+  const onEvent = feedSessionEvent(ctx)
   for (let index = 0; index < 1000; index += 1) onEvent({ id: 'm1c' }, userMessage(`line ${index}`, index))
   // What was queued before the drop still arrives, then the stream ends.
   const next = reader(response)
@@ -256,7 +263,7 @@ test('view replay omits hidden, refused and interactive calls in pages and the l
   const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed', { signal: abort.signal }))
   const next = reader(response)
   assert.equal((await next()).event, 'hello')
-  const onEvent = ctx.listeners.get('session/event').at(-2)
+  const onEvent = feedSessionEvent(ctx)
   for (const event of events) onEvent({ id: 'm1c' }, event)
   assert.deepEqual(await next(), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: expected } })
 })
