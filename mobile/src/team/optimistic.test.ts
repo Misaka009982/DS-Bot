@@ -110,7 +110,7 @@ test('switching to a computer with a lower revision clears the old team and acce
 
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
-      if (specifier === 'react' || specifier === 'react-native' || specifier === '../connection.ts' || specifier === './gate' || specifier === '../ui/i18n.ts') {
+      if (specifier === 'react' || specifier === 'react-native' || specifier === '../connection.ts' || specifier === './gate' || specifier === '../ui/i18n.ts' || specifier === '../store.ts' || specifier === '../extras/permission-confirm') {
         return { url: `mock:${specifier}`, shortCircuit: true }
       }
       return nextResolve(specifier, context)
@@ -144,6 +144,20 @@ test('switching to a computer with a lower revision clears the old team and acce
       }
       if (url === 'mock:./gate') {
         return { format: 'module', shortCircuit: true, source: `export const ensureUnlock = async () => {}` }
+      }
+      // 仅隔离平台依赖，权限字段识别和防误触开关仍使用真实模块。
+      if (url === 'mock:../store.ts') {
+        return {
+          format: 'module', shortCircuit: true,
+          source: `
+            export const readPrefs = async () => ({})
+            export const writePrefs = async () => {}
+            export const onPrefsChange = () => () => {}
+          `,
+        }
+      }
+      if (url === 'mock:../extras/permission-confirm') {
+        return { format: 'module', shortCircuit: true, source: `export const confirmPermission = async () => false` }
       }
       if (url === 'mock:../ui/i18n.ts') {
         return { format: 'module', shortCircuit: true, source: `export const t = (s) => s` }

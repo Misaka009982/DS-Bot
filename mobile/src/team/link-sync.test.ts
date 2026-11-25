@@ -11,7 +11,7 @@ let reconnectDelayMsFn: (hadLink: boolean, failStreak: number) => number
 before(async () => {
   hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
-      if (specifier === 'react' || specifier === 'react-native' || specifier === '../connection.ts' || specifier === './gate' || specifier === '../ui/i18n.ts') {
+      if (specifier === 'react' || specifier === 'react-native' || specifier === '../connection.ts' || specifier === './gate' || specifier === '../ui/i18n.ts' || specifier === '../store.ts' || specifier === '../extras/permission-confirm') {
         return { url: `mock:${specifier}`, shortCircuit: true }
       }
       return nextResolve(specifier, context)
@@ -49,6 +49,20 @@ before(async () => {
       }
       if (url === 'mock:./gate') {
         return { format: 'module', shortCircuit: true, source: `export const ensureUnlock = async () => {}` }
+      }
+      // 仅隔离平台依赖，权限字段识别和防误触开关仍使用真实模块。
+      if (url === 'mock:../store.ts') {
+        return {
+          format: 'module', shortCircuit: true,
+          source: `
+            export const readPrefs = async () => ({})
+            export const writePrefs = async () => {}
+            export const onPrefsChange = () => () => {}
+          `,
+        }
+      }
+      if (url === 'mock:../extras/permission-confirm') {
+        return { format: 'module', shortCircuit: true, source: `export const confirmPermission = async () => false` }
       }
       if (url === 'mock:../ui/i18n.ts') {
         return { format: 'module', shortCircuit: true, source: `export const t = (s) => s` }
@@ -165,6 +179,22 @@ function mountUseTeamLink(options: {
     cleanup: () => { for (const effect of effects) effect?.cleanup?.() },
   }
 }
+
+test('连接测试隔离设备存储，并保留手机权限开关的默认拒绝', async (t) => {
+  let writes = 0
+  const h = mountUseTeamLink({
+    async onStateCall() {
+      return { revision: 1, bots: [{ id: 'b1', name: 'Chief' }], extras: { schema: 1, remotePermissions: true } }
+    },
+    async onCallBotState() { writes += 1; return { value: true } },
+  })
+  t.after(h.cleanup)
+  h.render()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  await assert.rejects(h.render().call('update-bot', { id: 'b1', permission: 'danger-full-access' }),
+    error => (error as { code?: string }).code === 'bot/refused')
+  assert.equal(writes, 0)
+})
 
 test('useTeamLink continues polling after a transient state error and reconciles settled pending items', async (t) => {
   const scheduled: { ms: number; run: () => void }[] = []
