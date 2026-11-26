@@ -10,13 +10,13 @@
 
 源码修复提交 `b64637df` 已通过增补构建 [45807525998](https://github.com/Misaka009982/DS-Bot/actions/runs/45807525998) 的原版／增补独立验证与打包；综合构建 [45807460892](https://github.com/Misaka009982/DS-Bot/actions/runs/45807460892) 的泄漏扫描、Linux Node 22／24、Windows Node 24、lint／浏览器、手机类型／单元、link／Relay、桌面和 Docker 作业均已通过。iOS 模拟器作业被取消，不计为通过。历史 1.1.0 发布源码为 `281a7b4f`，其发布验证及打包见 [45810998531](https://github.com/Misaka009982/DS-Bot/actions/runs/45810998531)。本次 1.2.0 包含下面列出的行为修改，必须使用新提交的 CI 结果，不能沿用旧版成功记录。
 
-## 主 Bot 管理工具的会话隔离（待发布）
+## 主 Bot 管理工具的会话隔离（1.2.1）
 
 已核对上游 [#2107](https://github.com/Fei-Craft/DS-Bot/issues/2107) 的维护者结论及修复 [#2070](https://github.com/Fei-Craft/DS-Bot/pull/2070)、[#2123](https://github.com/Fei-Craft/DS-Bot/pull/2123)。固定 0.3.10 基线的 `filterBotAssembly` 在每个 Agent 注册过滤器，却未按请求核对会话；普通 Bot 的过滤器会从主 Bot 请求中删除整个 `team-admin`，包括增补的 `pause_bot`、`new_bot_session`。启动加载会重建当前会话到稳定 Bot ID 的索引，不能仅凭会话换段认定主角色丢失；`bot.packs` 也不能覆盖内置包规则。
 
 本次只在 `llm/stream` 和 `system-prompt/assemble` 增加稳定 Session ID 边界，缺失归属的请求不处理；主角色冻结与工具执行权限不变。`scoped-tools-creation.test.js` 加入真实 DSH 多 Agent 共存回归，覆盖主 Bot 换段、群聊及活动后台任务保留六个管理工具、普通 Bot 仍隐藏、普通会话和无 Session 请求不受影响。既有组装测试补齐真实调用上下文，继续验证隐藏的委派工具及提示词；旧测试逐 Agent 调过滤器，未覆盖共享事件总线上的互相干扰。
 
-本机仅静态核对语法、UTF-8／JSON、接入锚点与差异；新增回归未执行，等待对应提交的 CI 和实际宿主验收。没有改用户 `state.json`、主 Bot 配置或已发布附件。
+本机仅静态核对语法、UTF-8／JSON、接入锚点与差异；新增回归交由对应提交的 CI 执行，实际宿主验收仍待安装新包。没有改用户 `state.json`、主 Bot 配置或已发布附件。1.2.1 固定 tag 与包版本由 `manifest.json` 记录，包含本节修复及下面的资源服务身份修复；最终自动验证以该 tag 的发布工作流为准。
 
 ## 工作区服务身份修复（1.2.1）
 
