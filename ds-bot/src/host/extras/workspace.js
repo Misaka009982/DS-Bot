@@ -1,4 +1,4 @@
-import { resourceAccess, resourceDigest, resourceFailure, resourceFields, resourceHandles, observeRoot, rootServices, staleResource, unavailableResource, invalidResource, validResourceId } from './resources.js'
+import { resourceAccess, resourceDigest, resourceFailure, resourceFields, resourceHandles, observeRoot, rootServices, sameService, staleResource, unavailableResource, invalidResource, validResourceId } from './resources.js'
 import { redactText } from '../../shared/extras/redact.js'
 
 const MAX_FILE_BYTES = 256 * 1024
@@ -65,7 +65,7 @@ export function install(rt) {
   }
   const currentRoot = async (entry, access, signal) => {
     const current = await observeRoot(rt, entry, access, signal)
-    if (current.fs !== entry.fs || current.root.targetKey !== entry.root.targetKey || current.cwd !== entry.cwd || current.scopeKey !== entry.scopeKey) throw staleResource()
+    if (!sameService(current.fs, entry.fs) || !sameService(current.query, entry.query) || current.root.targetKey !== entry.root.targetKey || current.cwd !== entry.cwd || current.scopeKey !== entry.scopeKey) throw staleResource()
     await protectedRoot(current, signal)
     return current
   }

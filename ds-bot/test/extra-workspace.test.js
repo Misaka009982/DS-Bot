@@ -23,6 +23,35 @@ test('目录和文件默认不可读，授权后只读设备无保存回执', as
   await assert.rejects(save(f, root.rootId, 'fake'), { code: 'bot/refused' })
 })
 
+test('真实Cordis反复读取服务会换代理，仍能打开目录和按原回执保存', async t => {
+  const f = resourceBench(t, { traceServices: true })
+  assert.notEqual(f.rt.ctx.get('fs'), f.rt.ctx.get('fs'))
+  assert.notEqual(f.rt.ctx.get('sessionQuery'), f.rt.ctx.get('sessionQuery'))
+  await f.grant({ filesRead: true, filesWrite: true })
+  const root = await open(f)
+  const listing = await f.call('extra-workspace-list', { rootId: root.rootId, path: '' })
+  assert.deepEqual(listing.entries.map(entry => entry.name), ['other.txt', 'readme.txt'])
+  const page = await read(f, root.rootId)
+  assert.equal(page.text, '原内容\n')
+  assert.equal((await save(f, root.rootId, page.receiptId)).status, 'saved')
+  assert.equal(f.writes.length, 1)
+})
+test('实际文件服务更换仍使旧根失效，查询期间更换服务也拒绝继续读取', async t => {
+  const f = resourceBench(t, { traceServices: true })
+  await f.grant({ filesRead: true })
+  const root = await open(f)
+  f.replaceService('fs', { ...f.fs })
+  await assert.rejects(read(f, root.rootId), { code: 'bot/stale' })
+  assert.equal(f.reads(), 0)
+  const observe = f.query.observeSession
+  f.query.observeSession = async (...args) => {
+    const view = await observe(...args)
+    f.replaceService('sessionQuery', { ...f.query })
+    return view
+  }
+  await assert.rejects(open(f), { code: 'bot/stale' })
+  assert.equal(f.reads(), 0)
+})
 test('只读预览不消耗编辑回执，旧客户端缺标记仍保留原编辑协议', async t => {
   const f = resourceBench(t)
   await f.grant({ filesRead: true, filesWrite: true })

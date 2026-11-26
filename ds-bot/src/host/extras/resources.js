@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { symbols } from '@deepseek-ai/cordis'
 import { serviceOf } from '../services.js'
 
 export const RESOURCE_PERMISSIONS = ['terminalRead', 'terminalWrite', 'filesRead', 'filesWrite']
@@ -18,6 +19,8 @@ export const unavailableResource = () => resourceFailure('bot/unavailable', '当
 export const staleResource = () => resourceFailure('bot/stale', '资源句柄已失效，请重新打开当前会话的资源。')
 export const validResourceId = value => typeof value === 'string' && value.length > 0 && value.length <= 200 && !/[\s\p{Cc}]/u.test(value)
 export const resourceDigest = value => createHash('sha256').update(value).digest('hex')
+// Cordis 每次读取都可返回新代理；只比较原服务身份，实际调用仍保留代理上下文。
+export const sameService = (left, right) => left != null && right != null && (left[symbols.original] ?? left) === (right[symbols.original] ?? right)
 export function resourceFields(value, keys) {
   if (value === null || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key))) throw invalidResource()
 }
@@ -90,7 +93,8 @@ export async function observeRoot(rt, body, access, signal) {
   const scopeKey = resourceScope(rt, body, access.principal().deviceKind)
   const check = () => {
     access.check()
-    if (rootServices(rt)?.fs !== fs || rootServices(rt)?.query !== query || resourceScope(rt, body, access.principal().deviceKind) !== scopeKey) throw staleResource()
+    const current = rootServices(rt)
+    if (!sameService(current?.fs, fs) || !sameService(current?.query, query) || resourceScope(rt, body, access.principal().deviceKind) !== scopeKey) throw staleResource()
   }
   let view, cwd
   try {

@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { posix } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { install } from '../src/host/extras/index.js'
 
 export const resourceTarget = { scope: { kind: 'bot', botId: 'bot' }, sessionId: 'current' }
 export const resourceDevice = { deviceId: 'device', kind: 'browser', identityKey: 'test-public', pairedAt: 10 }
 
-export function resourceBench(t) {
+export function resourceBench(t, { traceServices = false } = {}) {
   const files = new Map(), processes = [], disposers = [], listeners = new Map(), writes = []
   let version = 0, reads = 0, observed = 0
   const put = (path, content = '', type = 'file') => files.set(path, { content: Buffer.isBuffer(content) ? content : Buffer.from(content), type, version: String(++version) })
@@ -71,11 +72,18 @@ export function resourceBench(t) {
       return process
     },
   }
+  const providers = { fs, sessionQuery: query, subprocess }
+  const serviceContext = traceServices ? new Context() : null
+  if (serviceContext) for (const [name, provider] of Object.entries(providers)) {
+    Object.defineProperty(provider, Service.tracker, { value: { property: 'ctx' } })
+    provider.ctx = serviceContext
+    serviceContext.provide(name, provider)
+  }
   const bot = { id: 'bot', sessionId: 'current' }, other = { id: 'other', sessionId: 'other-current' }
   const rt = {
     state: { extras: {}, workspaceId: 'workspace', bots: { bot, other }, rooms: {}, switching: {} },
     ctx: {
-      get: name => ({ fs, sessionQuery: query, subprocess })[name],
+      get: name => serviceContext ? serviceContext.get(name) : providers[name],
       workspaceRegistry: { get: () => ({ path: '/work' }) },
       on: (name, callback) => (listeners.get(name) ?? listeners.set(name, []).get(name)).push(callback),
       effect: (effect, name) => { if (['ds-bot: 增补工作区资源', 'ds-bot: 增补服务器终端'].includes(name)) disposers.push(effect()) },
@@ -93,7 +101,8 @@ export function resourceBench(t) {
     authorize: () => rt.extraRemoteAccessError(device, endpoint, body),
     resources: () => rt.extraResourceAccess(device), deviceKind: () => device.kind, fullMessages: () => rt.extraFullMessagesAllowed(device),
   })
-  const f = { rt, bot, files, fs, query, subprocess, processes, writes, put, grant, call, cwd: '/work', reads: () => reads, observed: () => observed }
-  t.after(async () => { for (const dispose of disposers.reverse()) await dispose() })
+  const f = { rt, bot, files, fs, query, subprocess, processes, writes, put, grant, call, cwd: '/work', reads: () => reads, observed: () => observed,
+    replaceService: (name, value) => serviceContext ? serviceContext.set(name, value) : (providers[name] = value) }
+  t.after(async () => { for (const dispose of disposers.reverse()) await dispose(); await serviceContext?.fiber.dispose() })
   return f
 }

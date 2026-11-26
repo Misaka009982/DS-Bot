@@ -10,6 +10,14 @@
 
 源码修复提交 `b64637df` 已通过增补构建 [45807525998](https://github.com/Misaka009982/DS-Bot/actions/runs/45807525998) 的原版／增补独立验证与打包；综合构建 [45807460892](https://github.com/Misaka009982/DS-Bot/actions/runs/45807460892) 的泄漏扫描、Linux Node 22／24、Windows Node 24、lint／浏览器、手机类型／单元、link／Relay、桌面和 Docker 作业均已通过。iOS 模拟器作业被取消，不计为通过。历史 1.1.0 发布源码为 `281a7b4f`，其发布验证及打包见 [45810998531](https://github.com/Misaka009982/DS-Bot/actions/runs/45810998531)。本次 1.2.0 包含下面列出的行为修改，必须使用新提交的 CI 结果，不能沿用旧版成功记录。
 
+## 工作区服务身份修复（1.2.1）
+
+Deck 实机打开工作区收到 `bot/stale`。已只读核对公开 `@deepseek-ai/cordis@4.1.0` 的 `getTraceable/createTraceable`、`ReflectService.get` 和 `FileSystem extends Service`：同一服务的两次读取可以返回不同代理。原 `observeRoot`、`workspace.currentRoot` 及 PTY 创建路径直接比较对象引用，会在资源未变更时提前拒绝。
+
+修复通过 Cordis 公共导出的 `symbols.original` 只比较原服务身份；读取、文件操作和子进程调用继续使用原代理，保留上下文与授权。真实提供方更换、服务卸载、scope／会话／工作目录改变仍拒绝旧根；单次保存回执及跨进程保证范围不变。
+
+现有资源夹具增加真实 `Context` 的可选代理模式，新增3项回归定义覆盖目录／读取／保存、查询期间及已持有句柄后的实际服务更换、PTY代理与提供方更换。此前固定普通对象的测试不足以覆盖此条件。本机仅语法、UTF-8与差异核查，CI结果按新提交确认；真实文件后端及用户现场仍待安装 `0.3.10-addons.4` 后验证。
+
 ## 私聊目标模式（1.2.0）
 
 本次新增独立私聊目标，不解除原生 DSH Goal 的拦截。目标跟随 Bot 保存，普通阶段汇报后的正常轮次结束不再直接放弃目标。入口、状态、停止／换段／重启和证据边界见 [private-goal.md](private-goal.md)。已发布 1.1.0 附件不含此改动，需要新的 CI 验证与安装包。

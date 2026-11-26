@@ -1,6 +1,8 @@
 # DS-Bot 正式版增补
 
-本分支以 DS-Bot **0.3.10** 的固定提交 `d104d9ca18d69a35460f14e15dff4d553181433a` 为基线。增补版本 `1.2.0`，npm 安装包版本 `0.3.10-addons.3`。不跟随 `dev` 或滚动 `main`，不修改 DSH。
+本分支以 DS-Bot **0.3.10** 的固定提交 `d104d9ca18d69a35460f14e15dff4d553181433a` 为基线。增补版本 `1.2.1`，npm 安装包版本 `0.3.10-addons.4`。不跟随 `dev` 或滚动 `main`，不修改 DSH。
+
+**1.2.1 修复说明：** 修正真实 Cordis 服务每次查询返回新代理时，工作区打开／列目录误报句柄失效及用户 PTY 创建误报提供方变化。只比较公开的原服务身份，方法调用仍经过上下文代理；真实服务更换、会话／目录变化和授权撤销仍拒绝旧句柄。生成、回归与打包交给本提交 CI，真实宿主读写仍需安装新包后验收；旧 1.2.0 附件不覆盖。
 
 **1.2.0 发布说明：** 新增私聊持久目标与自动续跑；连续工具合为默认收起的总数，内部按真实路径／任务说明逐项展开；修复旧宿主必填 `throughSeq` 的工具详情分页。同步修正重复调用编号关联、只读文件预览回执消耗、终端关闭退出码结算和阻塞恢复归属。安装包及验证结果以新 tag 对应的 Actions 与 Release 附件为准，旧版 `addons-v0.3.10-1.1.0` 保留供回退。
 
@@ -99,11 +101,11 @@ Bot 身份、长期记忆、角色指令、模型、权限、工作目录及增�
 
 无需 npm 账号、npm Token 或 `npm publish`。`release-addons.yml` 使用已有依赖与 `npm pack` 生成：
 
-- `ds-bot-0.3.10-addons.3.tgz`
+- `ds-bot-0.3.10-addons.4.tgz`
 - `SHA256SUMS-addons.txt`
 - `BUILD-INFO-addons.json`：记录上游提交、增补版本、源码提交和 SHA256。
 
-发布 tag 必须是 `addons-v0.3.10-1.2.0`，并与 `manifest.json` 一致。原版基线和增补版是两个独立验证 job；两者成功后才上传 Releases。上游 `release.yml` 在派生仓库跳过，避免触发 npm Trusted Publishing。手动运行增补 workflow 只生成 Actions Artifact，不自动创建 Release。
+发布 tag 必须是 `addons-v0.3.10-1.2.1`，并与 `manifest.json` 一致。原版基线和增补版是两个独立验证 job；两者成功后才上传 Releases。上游 `release.yml` 在派生仓库跳过，避免触发 npm Trusted Publishing。手动运行增补 workflow 只生成 Actions Artifact，不自动创建 Release。
 
 `.tgz` 是 **DSH 插件包**，不是 Windows 安装程序、手机 APK 或完全离线依赖包。手机界面源码位于 `mobile/src/extras/`，需要重新构建手机应用／网页版才能看到新入口；本流程不替换安卓签名或冒充上游 APK。安装 `.tgz` 时 DSH／npm 仍可能从公开 npm registry 取得它已有的依赖，这与注册 npm 发布账号无关。
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix, win32 } from 'node:path'
 import { serviceOf } from '../services.js'
-import { resourceAccess, resourceDigest, resourceFailure, resourceFields, resourceHandles, resourceScope, observeRoot, rootServices, staleResource, unavailableResource, invalidResource, validResourceId } from './resources.js'
+import { resourceAccess, resourceDigest, resourceFailure, resourceFields, resourceHandles, resourceScope, observeRoot, rootServices, sameService, staleResource, unavailableResource, invalidResource, validResourceId } from './resources.js'
 
 const OUTPUT_BYTES = 512 * 1024
 const PAGE_BYTES = 32 * 1024
@@ -162,7 +162,7 @@ export function install(rt) {
           if (!['posix', 'windows'].includes(environment?.platform)) throw unavailableResource()
           const path = await provider.resolveExecutable(environment.defaultShell ?? (environment.platform === 'windows' ? 'cmd.exe' : '/bin/sh'), undefined, fused)
           context.check()
-          if (subprocess() !== provider) throw unavailableResource()
+          if (!sameService(subprocess(), provider)) throw unavailableResource()
           const shell = (environment.platform === 'windows' ? win32 : posix).basename(path).toLowerCase().replace(/\.exe$/, '')
           const args = ['pwsh', 'powershell'].includes(shell) ? ['-NoLogo'] : environment.platform === 'posix' ? ['-i'] : []
           entry.process = await provider.spawnTerminal({ argv: [path, ...args], cwd: context.fs.processPath(context.root),

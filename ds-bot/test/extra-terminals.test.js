@@ -30,6 +30,22 @@ test('服务卸载时远程状态不复用本机旧能力的读写授权', async
   assert.equal(before.extras.terminals.write, true)
 })
 
+test('真实Cordis代理的PTY提供方不误报更换，实际更换仍阻止创建', async t => {
+  const f = resourceBench(t, { traceServices: true })
+  await f.grant({ terminalRead: true, terminalWrite: true })
+  assert.notEqual(f.rt.ctx.get('subprocess'), f.rt.ctx.get('subprocess'))
+  const opened = await create(f)
+  assert.equal(opened.status, 'running'); assert.equal(f.processes.length, 1)
+  await f.call('extra-terminal-close', { handleId: opened.handleId })
+  const resolve = f.subprocess.resolveExecutable
+  f.subprocess.resolveExecutable = async (...args) => {
+    const path = await resolve(...args)
+    f.replaceService('subprocess', { ...f.subprocess })
+    return path
+  }
+  await assert.rejects(create(f, 'replacement'), { code: 'bot/unavailable' })
+  assert.equal(f.processes.length, 1)
+})
 test('真实 PTY 创建幂等，输出保留字节和偏移，重复输入只投递一次', async t => {
   const f = resourceBench(t)
   await f.grant({ terminalRead: true, terminalWrite: true })
