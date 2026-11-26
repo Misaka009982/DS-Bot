@@ -552,8 +552,15 @@ test('a hidden Bot made Main Bot shows again, and a replaced Chief drops its hel
   assert.equal(toChief(), greeted)
 })
 
-// A turn in a Bot Session as DSH reports it, to every listener.
-const emitIn = (ctx, sessionId, event) => { for (const listener of ctx.listeners.get('session/event')) listener({ id: sessionId }, event) }
+// 按真实 DSH 日志补齐每个会话的递增序号，让恢复判断有可核对的来源。
+const eventSequences = new WeakMap()
+const emitIn = (ctx, sessionId, event) => {
+  let sessions = eventSequences.get(ctx)
+  if (!sessions) { sessions = new Map(); eventSequences.set(ctx, sessions) }
+  const seq = event.seq ?? sessions.get(sessionId) ?? 0
+  sessions.set(sessionId, seq + 1)
+  for (const listener of ctx.listeners.get('session/event')) listener({ id: sessionId }, { ...event, seq })
+}
 function runTurn(ctx, sessionId, turn, message, reason) {
   emitIn(ctx, sessionId, { type: 'turn/start', data: { turn } })
   emitIn(ctx, sessionId, { type: 'user/message', data: message })
@@ -642,8 +649,11 @@ test('a greeting that fails on a key is held again and goes out once the key is 
   await settle()
   const main = await botIn(call, chief)
   assert.equal(main.waiting, true)
-  assert.deepEqual(Object.keys(main.blocked).sort(), ['at', 'code', 'provider'])
+  assert.deepEqual(Object.keys(main.blocked).sort(), ['at', 'code', 'provider', 'seq', 'sessionId', 'turn'])
   assert.equal(main.blocked.provider, 'deepseek')
+  assert.equal(main.blocked.sessionId, chief)
+  assert.equal(main.blocked.turn, 1)
+  assert.equal(main.blocked.seq, 2)
   // Setting the same model again (or only a thinking level) fixes nothing, so the
   // greeting stays held.
   const same = await call('update-bot', { id: chief, model: 'deepseek/deepseek-v4-flash' })
@@ -669,7 +679,7 @@ test('a Bot is blocked by the facts of a failure only the user can fix, until it
   runTurn(ctx, chief, 1, typed('hi'), failed('QUOTA', { status: 402, requestId: 'req-1' }))
   await settle()
   const { blocked } = await botIn(call, chief)
-  assert.deepEqual({ ...blocked, at: typeof blocked.at }, { code: 'QUOTA', status: 402, requestId: 'req-1', provider: 'deepseek', at: 'number' })
+  assert.deepEqual({ ...blocked, at: typeof blocked.at }, { code: 'QUOTA', status: 402, requestId: 'req-1', provider: 'deepseek', at: 'number', sessionId: chief, turn: 1, seq: 2 })
   // A failure a retry can fix leaves it as it is.
   runTurn(ctx, chief, 2, typed('again'), failed('SERVER', { status: 503 }))
   await settle()
@@ -677,7 +687,11 @@ test('a Bot is blocked by the facts of a failure only the user can fix, until it
 
   runTurn(ctx, chief, 3, typed('again'), { kind: 'completed' })
   await settle()
-  assert.equal((await botIn(call, chief)).blocked, undefined)
+  const recovered = await botIn(call, chief)
+  assert.equal(recovered.blocked, undefined)
+  assert.deepEqual({ ...recovered.recovery, at: typeof recovered.recovery.at }, {
+    schema: 1, sessionId: chief, failedTurn: 1, failedSeq: 2, completedTurn: 3, completedSeq: 8, at: 'number',
+  })
 
   runTurn(ctx, chief, 4, typed('more'), failed('AUTH', { status: 401 }))
   await settle()

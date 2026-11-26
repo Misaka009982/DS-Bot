@@ -209,7 +209,7 @@ test('资源读写授权经过真实加密配对和端点上下文，远程不�
   assert.deepEqual((await list()).value.items, [])
   const capabilities = (await remote.client.rpc('bot', { endpoint: 'extra-status', payload: {} })).value
   assert.deepEqual(capabilities.terminals, { schema: 1, read: true, write: false })
-  assert.deepEqual(capabilities.workspace, { schema: 1, read: false, write: false })
+  assert.deepEqual(capabilities.workspace, { schema: 1, readOnlyPreview: true, read: false, write: false })
   assert.deepEqual(capabilities.toolChanges, { schema: 1, read: true })
   await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: false })
   assert.equal((await change()).error.code, 'bot/refused')

@@ -94,9 +94,9 @@ test('展开总数只看操作标题，展开单项直接显示命令与输出�
   await copy.props.onClick(); assert.deepEqual(ui.copied, ['git diff --stat'])
 })
 test('文件行在未展开单项时就能区分真实路径，只按明确工作目录缩短', () => {
-  const ui = component(body => page(body, 'file'), { workDir: '/home/inkos/inkos', tools: [
-    { name: 'read', sessionId: 'part', callId: 'a', callSeq: 1, filePath: '/home/inkos/inkos/packages/cli/src/core/pipeline/runner.ts' },
-    { name: 'read', sessionId: 'part', callId: 'b', callSeq: 2, filePath: '/home/inkos/inkos/docs/incremental-chapter-processing.md' },
+  const ui = component(body => page(body, 'file'), { workDir: '/tmp/project/inkos', tools: [
+    { name: 'read', sessionId: 'part', callId: 'a', callSeq: 1, filePath: '/tmp/project/inkos/packages/cli/src/core/pipeline/runner.ts' },
+    { name: 'read', sessionId: 'part', callId: 'b', callSeq: 2, filePath: '/tmp/project/inkos/docs/incremental-chapter-processing.md' },
   ] })
   toggle(ui.root(), true)
   assert.match(heading(ui.tool(0)), /Read.*inkos\/packages\/cli\/src\/core\/pipeline\/runner.ts/)
