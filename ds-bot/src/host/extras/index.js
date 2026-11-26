@@ -7,6 +7,7 @@ import { install as installTools } from './tools.js'
 import { install as installMessages } from './messages.js'
 import { install as installTodos } from './todos.js'
 import { install as installNewSession } from './new-session.js'
+import { install as installSessionTools } from './session-tools.js'
 
 const READS = new Set(['extra-status', 'extra-tool-detail', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read'])
 export const EXTRA_ENDPOINTS = new Set([...READS, 'extra-bot-set', 'phone-extra-set', 'extra-new-session'])
@@ -20,6 +21,7 @@ export function install(rt) {
   installMessages(rt)
   installTodos(rt)
   installNewSession(rt)
+  installSessionTools(rt)
   const botFor = sessionId => rt.chatOwners.has(sessionId) && !rt.groupOwners.has(sessionId) && !rt.taskOwners.has(sessionId)
     ? rt.botOf(sessionId) ?? rt.botOf(rt.selfOf(sessionId)) : undefined
   rt.extraMessageMode = (sessionId, requested) => messageMode(botFor(sessionId)?.extras, requested)

@@ -54,7 +54,7 @@ export function ToolSteps({ item, sessionId, open, onToggle }: { item: ChatItem;
       <Text style={[typeScale.caption, { color: p.ink3, textAlign: 'center' }]}>{text('Used {count} tools', { count: tools.length })}{typeof item.ms === 'number' && item.ms > 0 ? ` · ${Math.round(item.ms / 1000)} s` : ''}</Text>
     </Pressable>
     {open ? <View style={{ borderWidth: 1, borderColor: p.line, borderRadius: 10, padding: 10, gap: 10 }}>
-      <Text style={[typeScale.caption, { color: p.ink3 }]}>{text('Redacted; loaded only when opened.')}</Text>
+      <Text style={[typeScale.caption, { color: p.ink3 }]}>{text('Secret protection is on; details load only when opened.')}</Text>
       {tools.map((entry, i) => {
         const tool = { ...entry, sessionId: entry.sessionId ?? item.sessionId ?? sessionId }
         return <View key={`${computer?.hostKey}:${full}:${tool.callId ?? tool.name}:${i}`} style={{ gap: 4 }}>

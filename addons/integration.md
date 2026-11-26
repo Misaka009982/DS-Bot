@@ -14,17 +14,18 @@
 | `ds-bot/src/host/extras/settings.js`、`prompt.js` | 模式校验和每次用户输入的异步模式上下文 |
 | `ds-bot/src/host/extras/write-settings.js`、`access.js` | 串行设置保存、失败回退与设备消息授权 |
 | `ds-bot/src/host/extras/new-session.js`、`ds-bot/src/client/extras/new-session.js` | Manage 中确认新建干净私聊；保留 Bot 设置／记忆和旧历史，复用原切段交接及恢复 |
+| `ds-bot/src/host/extras/session-tools.js` | 仅主 Bot 使用的模型暂停与回执绑定的新建会话；执行时重验权，默认保留排队输入，拒绝未完成的旧私聊交接 |
 | `ds-bot/src/host/extras/archive.js` | 24 小时归档候选、保护规则、公开归档接口和冷历史读取 |
 | `ds-bot/src/host/extras/log-page.js`、`tools.js` | 所有权检查、日志分页、PTC 子调用和工具详情 |
 | `ds-bot/src/host/extras/messages.js`、`todos.js` | 内部消息、失败／重试状态与真实工具待办 |
-| `ds-bot/src/shared/extras/` | 纯文本脱敏与增补文案 |
+| `ds-bot/src/shared/extras/` | 纯文本脱敏、增补文案与服务器配对名称校验／二维码元数据更新 |
 | `ds-bot/src/client/extras/` | 电脑设置、设备授权、折叠工具与消息读取适配 |
 | `mobile/src/extras/` | 手机安全开关、工具详情、待办与后台任务阅读 |
 | `link/src/extras/device-name.ts` | 已认证设备名称清理／刷新，不参与权限判断 |
 | `addons/` | 固定版本、接入检查、打包与用户验收文档 |
 | `.github/workflows/release-addons.yml` | 原版／增补独立验证，npm pack 后上传 Releases |
 
-现有源码的变更集中在 `manifest.json` 的 26 个固定接入文件；测试和发布门禁另行列出。不能只复制 `extras/` 而遗漏这些接入点。
+现有源码的变更集中在 `manifest.json` 的 29 个固定接入文件；测试和发布门禁另行列出。不能只复制 `extras/` 而遗漏这些接入点。
 
 ## 原文件接入点
 
@@ -34,13 +35,15 @@
 | `host/turns.js` | 在上游已有的 prompt 适配处传入新请求模式，不修改 DSH |
 | `host/bot-tasks.js` | 显式 queue／steer 输入不转成新的后台任务 |
 | `host/channel.js` | 增补状态、端点分发、已认证调用上下文、传递 send.mode |
-| `host/phone.js` | 从真实配对记录验权、给每个远程状态注明消息授权、设备列表显示授权 |
+| `host/phone.js` | 从真实配对记录验权、给每个远程状态注明消息授权、设备列表显示授权；`phone-set.serverName` 保存服务器扫码名称，二维码与浏览器链接只变显示名，原身份／授权不变 |
 | `host/remote.js` | Gateway 不得冒充已配对设备，不得修改电脑授权 |
 | `host/parts.js` | 可选增强投影／工具字段、旧段冷读取；新建会话只替换上下文准备，复用原切段锁／转交／恢复；默认旧格式不变 |
 | `host/mobile.js` | 群聊增强投影和旧群段冷读取 |
 | `host/feed.js` | 稳定命名原 SSE 会话事件回调供测试定位，不新增监听器、不改变消息发布或权限 |
+| `host/constants.js`、`host/builtin-packs.js` | 登记 `pause_bot`／`new_bot_session` 并纳入原 `team-admin` 包；普通 Bot 默认不可见，执行仍由服务端校验主角色 |
+| `host/prompt.js` | 主 Bot 先暂停并取得回执，再新建干净会话；禁止盲目重试、重放非幂等任务或把切换成功当作故障恢复 |
 | `shared/browser-endpoints.js` | 只新增明确的增补端点，原敏感接口不放开 |
-| `client/bot-settings.js`、`phone-page.js` | 额外卡片／设备授权与名称显示，Manage 插入新建会话行 |
+| `client/bot-settings.js`、`phone-page.js` | 额外卡片／设备授权与名称显示，Manage 插入新建会话行；手机连接页插入服务器名称编辑，依据 `phone.serverName` 字符串字段判定支持 |
 | `client/team-actions.js` | 设置方法、携带当前 Session 的新建请求与后台任务增强读取 |
 | `client/index.js`、`app/ui/src/team.js` | 合并增补 live 字段 |
 | `client/cells.js`、`bot-tasks.js` | 复用增补工具摘要和纯文本消息组件 |
@@ -55,11 +58,15 @@
 
 `extra-*` 是新增协议，不把 `job_output` 名称、普通聊天文字或“未确认”当作完整工具结果。增强字段仅增强客户端使用，原 `chat`／`steps:true` 等旧调用保留原格式。
 
+主 Bot 工具复用现有 `cancel`／`whenIdle` 和干净新建流程，不复用会额外发起解释轮次的 `stop_bot`。`discard_queued` 默认 `false`，只有显式 `true` 才允许丢弃队列并报告数量；暂停回执绑定调用方、调用会话、目标当前私聊、模型／权限／工作目录和 10 分钟时效，新输入／新轮次会使其失效。同一前台线程的旧私聊仍有 `state.switching` 标记时拒绝再次操作，不误拦独立群聊或后台任务；`handoff_pending` 与 `recovery_verified` 如实反映交接和未验证恢复。
+
+服务器扫码名称复用仅电脑本机可调用的 `phone-set`，不新增远程端点。可选 `serverName` 保存在现有 `phone.json`；空值删除覆盖并回退 `hostname()`，读取视图始终提供字符串 `phone.serverName`，旧服务器没有该字段时隐藏编辑入口。上限沿用配对／握手的 64 个 UTF-16 代码单元；名称不参与身份或授权判断，不更新手机已保存的名称。名称保存失败恢复原内存值，已有二维码只更新名称而不另开配对窗口或延长有效期。
+
 ## 升级顺序
 
 1. 用户明确选定下一份正式 Release，记录 tag 与完整提交。
 2. 在独立干净目录验证原版插件、link、手机与桌面构建；不要先带入增补。
-3. 比较 26 个接入文件的语义，尤其 prompt、inbox、归档／卸载、配对、错误事件、PTC 与分页契约。锚点文本相同也不代表语义兼容。
+3. 比较 29 个接入文件的语义，尤其 prompt、inbox、归档／卸载、配对、错误事件、PTC 与分页契约。锚点文本相同也不代表语义兼容。
 4. 只移植独立目录和逐个固定接入点。未知协议／任务状态应失败或跳过，不静默猜测。
 5. 更新 `manifest.json`、检查脚本、固定测试及 release workflow 中原版 checkout 的 SHA；重新编号增补／包版本。
 6. 重新生成 `client.js`／`link.js`／`office.js`，运行双方独立验证。若原版失败，优先定位上游／环境；原版成功而增补失败，再定位增补。

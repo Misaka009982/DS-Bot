@@ -9,6 +9,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { DeviceRegistry, HostLink, LINK_PATH, deviceIdFor, generateKeyPair, pairingUri, randomToken } from '../../link.js'
 import { BROWSER_ALLOWED } from '../shared/browser-endpoints.js'
+import { cleanPhoneServerName, readPhoneServerName, renamePhonePairing } from '../shared/extras/phone-name.js'
 
 const FILE = 'phone.json'
 const SERVER = /^wss?:\/\/[^\s/?#@]+(\/[^\s?#]*)?$/i
@@ -62,6 +63,7 @@ export function install(rt) {
   }
   // An empty address means the DS Bot relay; a user's own Server replaces it.
   const serverUrl = () => data.server || DEFAULT_SERVER
+  const pairingName = () => readPhoneServerName(data.serverName) || hostname()
   const identity = () => {
     const keys = data.identity
     try {
@@ -134,7 +136,7 @@ export function install(rt) {
       url: serverUrl(),
       identity: identity(),
       accessToken: data.accessToken,
-      name: hostname(),
+      name: pairingName(),
       admits: (deviceId, key) => registry.admits(deviceId, key),
       authorize: (deviceId, key, hello) => registry.authorize(deviceId, key, hello),
       handle: (method, params, request) => method === 'bot' ? callBot(params, request.signal, request.deviceId) : Promise.reject(Object.assign(new Error(`Unknown method ${method}`), { code: 'METHOD_NOT_FOUND' })),
@@ -162,6 +164,7 @@ export function install(rt) {
     const reason = blocked ?? link?.error
     return {
       server: serverUrl(),
+      serverName: readPhoneServerName(data.serverName),
       on: data.on === true,
       status: link?.status ?? 'off',
       ...(reason === undefined ? {} : { error: reason }),
@@ -175,6 +178,8 @@ export function install(rt) {
     read()
     switch (endpoint) {
       case 'phone-set': {
+        const suppliedName = Object.hasOwn(body, 'serverName')
+        const name = suppliedName ? cleanPhoneServerName(body.serverName) : undefined
         if (body.server !== undefined) {
           const entered = String(body.server).trim().replace(/\/+$/, '')
           if (entered !== '' && !SERVER.test(entered)) throw invalid('The Server address must start with ws:// or wss://')
@@ -185,15 +190,29 @@ export function install(rt) {
           registry?.closePairing()
         }
         if (body.on !== undefined) data.on = body.on === true
+        const namedPairing = suppliedName ? renamePhonePairing(pairing, name || hostname()) : pairing
         identity()
-        write()
+        const previousName = data.serverName
+        const hadName = Object.hasOwn(data, 'serverName')
+        if (suppliedName) {
+          if (name === '') delete data.serverName
+          else data.serverName = name
+        }
+        try { write() } catch (error) {
+          if (suppliedName) {
+            if (hadName) data.serverName = previousName
+            else delete data.serverName
+          }
+          throw error
+        }
+        pairing = namedPairing
         break
       }
       case 'phone-pair': {
         reconcile()
         if (link === null) throw invalid(blocked ?? 'Turn on phone access first')
         const { code, browserCode, expiresAt } = registry.openPairing()
-        const offer = { server: serverUrl(), hostDeviceId: data.identity.deviceId, hostKey: data.identity.publicKey, name: hostname() }
+        const offer = { server: serverUrl(), hostDeviceId: data.identity.deviceId, hostKey: data.identity.publicKey, name: pairingName() }
         pairing = { uri: pairingUri({ ...offer, code }), browserUri: pairingUri({ ...offer, code: browserCode, device: 'browser' }), expiresAt }
         break
       }

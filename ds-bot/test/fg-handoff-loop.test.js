@@ -19,16 +19,17 @@ const settle = async (check, ms = 4000, label = 'condition not reached') => {
 
 const textOf = message => (message?.content ?? []).map(block => block.text ?? '').join('\n')
 
-async function createRealLoopRig(t, { prefs = {}, failForkAndCreate = false, holdFirstModel = false, holdFork = false, delayResolveMs = 0 } = {}) {
+async function createRealLoopRig(t, { prefs = {}, failForkAndCreate = false, holdFirstModel = false, holdFork = false, delayResolveMs = 0, mainPeer = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-fg-loop-'))
   const workDir = join(home, 'team')
   mkdirSync(workDir, { recursive: true })
   writeFileSync(join(home, 'state.json'), JSON.stringify({
     version: 1,
-    mainBotIds: ['a'],
+    mainBotIds: mainPeer ? ['chief'] : ['a'],
     workspaceId: 'w1',
     bots: {
-      a: { id: 'a', name: 'Chief', role: 'Boss', sessionId: 'dm-a', createdAt: 1 },
+      a: { id: 'a', name: mainPeer ? 'Writer' : 'Chief', role: 'Boss', sessionId: 'dm-a', createdAt: 1 },
+      ...(mainPeer ? { chief: { id: 'chief', name: 'Chief', role: 'Boss', sessionId: 'dm-chief', createdAt: 2 } } : {}),
     },
     rooms: {},
     agents: {},
@@ -141,6 +142,7 @@ async function createRealLoopRig(t, { prefs = {}, failForkAndCreate = false, hol
     return agent
   }
   await makeRealAgent('dm-a')
+  if (mainPeer) await makeRealAgent('dm-chief')
 
   let forkSeq = 0
   const ctx = fakeContext({
@@ -226,6 +228,32 @@ async function createRealLoopRig(t, { prefs = {}, failForkAndCreate = false, hol
   await rt.load()
   return { home, root, rootWarnings, rt, agents, toolStarted, toolGate, firstModelStarted, firstModelGate, forkStarted, forkGate, repliesBySession, modelCallsBySession }
 }
+
+test('真实 DSH：主 Bot 默认保留队列，显式丢弃后等待模型停稳再新建干净会话', async t => {
+  const rig = await createRealLoopRig(t, { holdFirstModel: true, mainPeer: true })
+  rig.rt.botOf('a').extras = { messageMode: 'queue' }
+  const target = rig.agents.get('dm-a')
+  const caller = rig.agents.get('dm-chief')
+  const invoke = (name, args) => rig.rt.teamTools.find(def => def.name === name).execute(args, { name, agent: caller, signal: new AbortController().signal })
+  target.followup(createUserMessage({ content: [{ type: 'text', text: 'old-bot-recovery-request' }], source: { kind: 'user' } }))
+  await rig.firstModelStarted.promise
+  target.send(createUserMessage({ content: [{ type: 'text', text: 'queued-bot-recovery-request' }], source: { kind: 'user' } }), 'next-turn', false)
+  await assert.rejects(invoke('pause_bot', { bot: 'Writer', reason: '已确认当前会话故障' }), error => error.code === 'bot/busy')
+  assert.equal(target.status, 'running')
+  assert.equal(target.inbox.nextTurn.length, 1)
+  const pause = JSON.parse(await invoke('pause_bot', { bot: 'Writer', reason: '已确认当前会话故障', discard_queued: true }))
+  assert.equal(pause.paused, true); assert.equal(pause.new_session_ready, true); assert.equal(pause.discarded_count, 1)
+  assert.equal(target.status, 'idle'); assert.equal(target.inbox.nextTurn.length, 0)
+  const result = JSON.parse(await invoke('new_bot_session', { bot: 'Writer', pause_id: pause.pause_id, reason: '换干净上下文排除兼容性问题' }))
+  assert.equal(result.previous_session_id, 'dm-a'); assert.equal(result.session_id, 'new-1')
+  assert.equal(result.session_changed, true); assert.equal(result.handoff_pending, false); assert.equal(result.recovery_verified, false)
+  assert.equal(rig.rt.chatOf('a'), 'new-1')
+  const fresh = rig.agents.get('new-1')
+  assert.equal(JSON.stringify(fresh.session.snapshotEvents()).includes('bot-recovery-request'), false)
+  assert.equal(rig.modelCallsBySession.get('dm-a'), 1)
+  assert.equal(rig.modelCallsBySession.get('new-1') ?? 0, 0, '新会话不调用模型写摘要或解释停止原因')
+  await assert.rejects(invoke('new_bot_session', { bot: 'Writer', pause_id: pause.pause_id, reason: '重复切换' }), error => error.code === 'bot/stale')
+})
 
 test('real DSH SessionStore + ReactLoopAgent: Desktop steer while busy hands off foreground without reentrancy error', async (t) => {
   const rig = await createRealLoopRig(t)

@@ -1,6 +1,6 @@
 export const BUILTIN_PACKS = {
   'team-admin': {
-    tools: ['create_bot', 'stop_bot', 'create_group', 'delete_group'],
+    tools: ['create_bot', 'stop_bot', 'create_group', 'delete_group', 'pause_bot', 'new_bot_session'],
     defaults: { main: 'always', bot: 'off' },
   },
 }

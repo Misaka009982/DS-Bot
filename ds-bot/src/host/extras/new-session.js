@@ -5,13 +5,13 @@ const queued = agent => [...agent.inbox.nextStep, ...agent.inbox.nextTurn]
 const referenceKeys = new Set(['sessionId', 'fromPart', 'toPart', 'targetSessionId', 'sourceSessionId', 'toId'])
 const references = (value, id) => value !== null && typeof value === 'object'
   && Object.entries(value).some(([key, entry]) => referenceKeys.has(key) && entry === id || references(entry, id))
-const settingsKey = bot => JSON.stringify([bot.model, bot.appliedModel, bot.effort, bot.permission, bot.workDir])
+export const settingsKey = bot => JSON.stringify([bot.model, bot.appliedModel, bot.effort, bot.permission, bot.workDir])
 const hasPendingWork = (rt, id) => rt.waitsForApproval?.(id) || rt.hasSubagents?.(id)
   || (rt.runningJobs?.(id)?.length ?? 0) > 0 || rt.state.questions[id] !== undefined
   || rt.state.views?.[id] !== undefined || references(rt.state.works, id) || references(rt.state.inflight, id)
 const busy = () => failure('bot/busy', '当前会话仍有运行、排队或待处理的操作，请先完成或停止后再新建会话。')
 
-function checkIdle(rt, agent) {
+export function checkIdle(rt, agent) {
   const id = agent.id
   const live = rt.live.get(id)
   if (agent.status !== 'idle' || live?.turn !== undefined || live?.pending !== undefined || queued(agent).length > 0

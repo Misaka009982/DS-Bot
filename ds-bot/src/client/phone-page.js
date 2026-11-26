@@ -5,6 +5,7 @@ import { dateLocale, t } from './i18n.js'
 import { browserPairingUrl } from './phone-browser.js'
 import { deviceLabel } from './extras/device-name.js'
 import { DeviceMessages, RemoteAuthorization } from './extras/settings.js'
+import { PhoneServerName } from './extras/phone-name.js'
 
 const OFF = { server: '', on: false, status: 'off', phones: [], pairing: null }
 // The quiet zone around a QR code is part of the code: scanners need it to find the edges.
@@ -141,6 +142,7 @@ export function PhonePage({ roster, actions, Section, Row }) {
             void run(actions.phoneSet({ on }))
           },
         })),
+      h(PhoneServerName, { phone, actions, run, Row, disabled: busy || wantPair || Boolean(roster.readOnly) }),
       h(Row, { label: t('Server'), hint: serverHost(phone.server), tour: 'phone-server' },
         h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setEditingServer(open => !open) }, editingServer ? t('Hide') : t('Edit'))),
       editingServer ? h('div', { className: 'bt-set-row bt-phone-server' },

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { apply } from '../index.js'
@@ -58,7 +58,9 @@ test('a phone pairs with the QR code and calls the same endpoints as the window'
   t.after(async () => { await desk.ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
 
   const first = await desk.call('state', {})
-  assert.deepEqual(first.value.phone, { server: DEFAULT_SERVER, on: false, status: 'off', phones: [], pairing: null })
+  const { serverName: initialName, ...basicPhone } = first.value.phone
+  assert.deepEqual(basicPhone, { server: DEFAULT_SERVER, on: false, status: 'off', phones: [], pairing: null })
+  assert.equal(initialName, '')
   assert.equal((await desk.call('phone-set', { server: 'http://relay.test' })).error.code, 'bot/invalid')
   assert.equal((await desk.call('phone-pair', {})).ok, false)
 
@@ -71,6 +73,19 @@ test('a phone pairs with the QR code and calls the same endpoints as the window'
   assert.equal(offer.device, undefined)
   assert.equal(parsePairingUri(paired.value.pairing.browserUri).device, 'browser')
   assert.notEqual(parsePairingUri(paired.value.pairing.browserUri).code, offer.code)
+  assert.equal(offer.name, hostname().slice(0, 64))
+  const savedPhone = JSON.parse(readFileSync(join(home, 'phone.json'), 'utf8'))
+  const customName = '杭州 + 100% & team'
+  const named = await desk.call('phone-set', { serverName: customName })
+  assert.equal(named.ok, true)
+  assert.equal(named.value.serverName, customName)
+  assert.deepEqual(parsePairingUri(named.value.pairing.uri), { ...offer, name: customName })
+  assert.deepEqual(parsePairingUri(named.value.pairing.browserUri), { ...parsePairingUri(paired.value.pairing.browserUri), name: customName })
+  assert.equal(named.value.pairing.expiresAt, paired.value.pairing.expiresAt)
+  const { serverName, ...keptPhone } = JSON.parse(readFileSync(join(home, 'phone.json'), 'utf8'))
+  assert.equal(serverName, customName)
+  assert.deepEqual(keptPhone, savedPhone)
+  // 已显示的旧二维码仍有同一个有效配对码，不因修改显示名失效。
   const link = phone(offer, { pairingCode: offer.code, name: 'Pixel' })
   await link.client.connect()
   const state = await link.client.rpc('bot', { endpoint: 'state', payload: {} })
@@ -78,17 +93,27 @@ test('a phone pairs with the QR code and calls the same endpoints as the window'
   assert.deepEqual(state.value.bots.map(bot => bot.name), ['Chief'])
   const refused = await link.client.rpc('bot', { endpoint: 'phone-pair', payload: {} })
   assert.equal(refused.error.code, 'bot/refused')
+  assert.equal((await link.client.rpc('bot', { endpoint: 'phone-set', payload: { serverName: '未授权名称' } })).error.code, 'bot/refused')
+  assert.equal((await desk.call('state', {})).value.phone.serverName, customName)
 
   const listed = (await desk.call('state', {})).value.phone
   assert.equal(listed.pairing, null)
   assert.deepEqual(listed.phones.map(entry => [entry.name, entry.connected]), [['Pixel', true]])
   assert.equal(listed.phones[0].kind, 'phone')
+  const activeName = await desk.call('phone-set', { serverName: '活动服务器' })
+  assert.equal(activeName.value.serverName, '活动服务器')
+  assert.deepEqual(activeName.value.phones, listed.phones)
+  assert.equal((await link.client.rpc('bot', { endpoint: 'state', payload: {} })).ok, true)
+  const restoredName = await desk.call('phone-set', { serverName: customName })
+  assert.equal(restoredName.value.serverName, customName)
+  assert.deepEqual(restoredName.value.phones, listed.phones)
   await link.client.close()
 
   // The computer keeps its identity across restarts, so the phone comes back without a code.
   await desk.ctx.dispose()
   desk = open(home)
-  await until(() => desk.call('state', {}), next => next.value.phone.status === 'online')
+  const reopened = await until(() => desk.call('state', {}), next => next.value.phone.status === 'online')
+  assert.equal(reopened.value.phone.serverName, customName)
   const again = phone(offer, {}, link.keys, link.token)
   await again.client.connect()
   assert.equal((await again.client.rpc('bot', { endpoint: 'state', payload: {} })).ok, true)
@@ -99,6 +124,12 @@ test('a phone pairs with the QR code and calls the same endpoints as the window'
   await closed
   await assert.rejects(phone(offer, {}, link.keys, link.token).client.connect(), { code: 'NOT_PAIRED' })
 
+  const resetName = await desk.call('phone-set', { serverName: '' })
+  assert.equal(resetName.value.serverName, '')
+  const defaultPair = parsePairingUri((await desk.call('phone-pair', {})).value.pairing.uri)
+  assert.equal(defaultPair.name, hostname().slice(0, 64))
+  assert.equal(defaultPair.hostDeviceId, offer.hostDeviceId)
+  assert.equal(defaultPair.hostKey, offer.hostKey)
   await desk.call('phone-set', { on: false })
   assert.equal((await desk.call('state', {})).value.phone.status, 'off')
 })

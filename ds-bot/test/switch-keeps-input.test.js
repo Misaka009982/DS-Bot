@@ -780,6 +780,76 @@ test('增补新建会话的定时迁移失败时保留恢复标记且不归档�
   assert.equal(host.archived.some(([id]) => id === 'b'), false)
 })
 
+test('主 Bot 的暂停回执接入真实新会话流程，保留身份、记忆配置、模型和旧历史', async t => {
+  const host = await start()
+  t.after(host.stop)
+  const bot = host.rt.botOf('b')
+  Object.assign(bot, { instructions: '保留角色与长期记忆', permission: 'read-only', extras: { messageMode: 'queue' }, memoryReview: { on: true } })
+  const before = structuredClone(bot)
+  const agent = host.agentOf('b'); agent.status = 'running'; host.rt.live.set('b', { turn: 1 })
+  const canceled = []
+  agent.cancel = reason => { canceled.push(reason); agent.status = 'idle'; host.rt.live.delete('b') }
+  agent.session.requestHeader = () => ({ config: { provider: 'gateway', model: 'model', reasoningEffort: 'high' } })
+  agent.session.deriveMessages = () => [{ role: 'assistant', content: [{ type: 'text', text: '不能复制旧对话' }] }]
+  host.ctx.sessionController.fork = () => { throw new Error('不能 fork 历史') }
+  host.ctx.llm.stream = () => { throw new Error('不能调用模型写摘要') }
+  const pause = JSON.parse(await host.tool('pause_bot', { bot: 'Writer', reason: '会话思维链不兼容' }, 'a'))
+  assert.equal(pause.paused, true); assert.equal(pause.new_session_ready, true); assert.equal(canceled.length, 1)
+  const result = JSON.parse(await host.tool('new_bot_session', { bot: 'Writer', pause_id: pause.pause_id, reason: '替换故障会话' }, 'a'))
+  assert.equal(result.session_changed, true); assert.equal(result.session_id, 's1'); assert.equal(result.recovery_verified, false)
+  const { sessionId, segments, ...after } = host.state().bots.b
+  const { sessionId: old, ...expected } = before
+  assert.equal(old, 'b'); assert.equal(sessionId, 's1'); assert.deepEqual(after, expected)
+  assert.deepEqual(segments.map(segment => segment.sessionId), ['b'])
+  assert.deepEqual(host.agentOf('s1').calls, [])
+  assert.deepEqual(host.archived, [['b', { stopActivity: true }]])
+  await assert.rejects(host.tool('new_bot_session', { bot: 'Writer', pause_id: pause.pause_id, reason: '重复切换' }, 'a'), error => error.code === 'bot/stale')
+  assert.equal(host.created.length, 1)
+})
+
+test('主 Bot 新会话创建中撤权或收到新输入时保留原会话，孤立新会话被归档', async t => {
+  for (const stage of ['role', 'private', 'input', 'cancel']) await t.test(stage, async sub => {
+    const host = await start(); sub.after(host.stop)
+    host.rt.botOf('b').extras = { messageMode: 'queue' }
+    const pause = JSON.parse(await host.tool('pause_bot', { bot: 'Writer', reason: '会话故障' }, 'a'))
+    const abort = new AbortController()
+    const create = host.ctx.sessionController.create
+    host.ctx.sessionController.create = async options => {
+      const result = await create(options)
+      if (stage === 'role') host.rt.state.mainBotIds = ['b']
+      else if (stage === 'private') host.rt.botOf('b').private = true
+      else if (stage === 'cancel') abort.abort()
+      else {
+        const message = said('late-recovery', '不能丢掉的新输入')
+        const agent = host.agentOf('b'); agent.inbox.nextTurn.push(message)
+        host.ctx.emit('agent/inbox/inserted', { agent, message })
+      }
+      return result
+    }
+    const tool = host.rt.teamTools.find(def => def.name === 'new_bot_session')
+    await assert.rejects(tool.execute({ bot: 'Writer', pause_id: pause.pause_id, reason: '替换故障会话' }, { agent: host.agentOf('a'), name: 'new_bot_session', signal: abort.signal }),
+      error => error.code === (stage === 'input' ? 'bot/stale' : 'bot/refused'))
+    assert.equal(host.rt.chatOf('b'), 'b')
+    assert.equal(host.archived.some(([id]) => id === 'b'), false)
+    assert.equal(host.archived.some(([id]) => id === 's1'), true)
+    if (stage === 'input') assert.deepEqual(inboxTexts(host.agentOf('b')), ['不能丢掉的新输入'])
+  })
+})
+
+test('主 Bot 的新会话回执明确报告定时交接未完成，不再重复创建', async t => {
+  const host = await start(); t.after(host.stop)
+  const pause = JSON.parse(await host.tool('pause_bot', { bot: 'Writer', reason: '会话故障' }, 'a'))
+  host.rt.moveSchedules = async () => { throw new Error('定时任务暂不可用') }
+  const result = JSON.parse(await host.tool('new_bot_session', { bot: 'Writer', pause_id: pause.pause_id, reason: '替换故障会话' }, 'a'))
+  assert.equal(result.session_changed, true); assert.equal(result.session_id, 's1')
+  assert.equal(result.handoff_pending, true); assert.equal(result.recovery_verified, false)
+  assert.deepEqual(host.state().switching, { b: { botId: 'b' } })
+  assert.equal(host.archived.some(([id]) => id === 'b'), false)
+  await assert.rejects(host.tool('pause_bot', { bot: 'Writer', reason: '交接未完成时再暂停' }, 'a'), error => error.code === 'bot/busy')
+  await assert.rejects(host.tool('new_bot_session', { bot: 'Writer', pause_id: pause.pause_id, reason: '再换一次' }, 'a'), error => error.code === 'bot/stale')
+  assert.equal(host.created.length, 1)
+})
+
 test('a configured small output limit is an ordinary cutoff, including reasoning-only output', async t => {
   const host = await start({ services: cutOffServices })
   t.after(host.stop)
