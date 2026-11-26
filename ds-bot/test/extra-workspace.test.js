@@ -104,6 +104,20 @@ test('文件被 Agent 修改后旧回执保存冲突，实际修改只来自 wri
   await assert.rejects(save(f, root.rootId, current.receiptId, '不可重放', 'another'), { code: 'bot/stale' })
 })
 
+test('保存修改的缓存复读保留可信遮盖标记，并按最新密钥库重新遮盖', async t => {
+  const f = resourceBench(t)
+  await f.grant({ filesRead: true, filesWrite: true })
+  const root = await open(f)
+  const page = await read(f, root.rootId)
+  await save(f, root.rootId, page.receiptId, '内容 fake-private-value rotated-value')
+  const change = () => f.call('extra-workspace-change', { rootId: root.rootId, receiptId: page.receiptId })
+  assert.equal((await change()).after, '内容 [secret:TEST] rotated-value')
+  const previous = f.rt.redactSecrets
+  f.rt.redactSecrets = value => previous(value).replaceAll('rotated-value', '[secret:NEW]')
+  assert.equal((await change()).after, '内容 [secret:TEST] [secret:NEW]')
+  assert.equal((await change()).redacted, true)
+})
+
 test('并发保存只领取一次回执，底层前置条件冲突和未知结果都不重放', async t => {
   const f = resourceBench(t)
   await f.grant({ filesRead: true, filesWrite: true })

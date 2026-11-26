@@ -91,19 +91,19 @@ test('中文输入期间 Enter 不保存；正常 Enter 保存，Escape 取消�
   assert.deepEqual(ui.requests, [{ serverName: '测试服务器' }])
 })
 
-test('轮询不覆盖正在编辑的草稿，取消后再次编辑使用服务器最新名称', () => {
+test('轮询不覆盖正在编辑的内容，取消后再次编辑使用服务器最新名称', () => {
   const ui = component()
   buttons(ui)[0].props.onClick()
-  input(ui).props.onChange({ target: { value: '未保存草稿' } })
+  input(ui).props.onChange({ target: { value: '未保存名称' } })
   ui.phone.serverName = '其他窗口保存的名称'
-  assert.equal(input(ui).props.value, '未保存草稿')
+  assert.equal(input(ui).props.value, '未保存名称')
   buttons(ui)[0].props.onClick()
   buttons(ui)[0].props.onClick()
   assert.equal(input(ui).props.value, '其他窗口保存的名称')
   assert.equal(ui.requests.length, 0)
 })
 
-test('保存失败保留草稿和错误，清空名称可恢复默认，禁用时不编辑或保存', async () => {
+test('保存失败保留未保存内容和错误，清空名称可恢复默认，禁用时不编辑或保存', async () => {
   const failed = component({ reply: () => Promise.reject(new Error('写盘失败')) })
   buttons(failed)[0].props.onClick()
   input(failed).props.onChange({ target: { value: '新服务器' } })
@@ -125,7 +125,7 @@ test('保存失败保留草稿和错误，清空名称可恢复默认，禁用�
   assert.equal(blocked.requests.length, 0)
 })
 
-test('超限、控制字符和不完整字符在发送前拒绝，错误保留草稿', async () => {
+test('超限、控制字符和不完整字符在发送前拒绝，错误保留编辑内容', async () => {
   for (const value of ['服'.repeat(65), 'a\nb', 'a\uD800b']) {
     const ui = component()
     buttons(ui)[0].props.onClick()

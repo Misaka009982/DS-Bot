@@ -247,10 +247,10 @@ const TEAM = {
   questions: {},
 }
 
-test('in the Desktop profile read_browser is the last tool and reads through the window', async (t) => {
+test('Desktop 的 read_browser 保持原工具顺序，增补工具随后追加，仍通过窗口读取', async (t) => {
   const { ctx, call, stop } = start(TEAM, { services: { profileContext: { name: 'desktop' } } })
   t.after(stop)
-  assert.equal(rt.teamTools.at(-1).name, 'read_browser')
+  assert.deepEqual(rt.teamTools.slice(-3).map(tool => tool.name), ['read_browser', 'pause_bot', 'new_bot_session'])
   assert.ok(ctx.calls.indexOf('effect ds-bot: browser channel') < ctx.calls.indexOf('effect ds-bot: api route'))
   const read = args => rt.teamTools.find(d => d.name === 'read_browser').execute(args, { agent: { id: 'b2' } })
 

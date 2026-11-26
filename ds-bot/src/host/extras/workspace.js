@@ -20,7 +20,7 @@ export function workspacePath(value, allowRoot = false) {
 
 function fileError(error) {
   if (typeof error?.code === 'string' && error.code.startsWith('bot/')) return error
-  if (error?.code === 'FS_STALE_VERSION' || error?.code === 'FS_NOT_OBSERVED') return resourceFailure('bot/conflict', '文件已经变化，请重新读取并保留本地草稿。')
+  if (error?.code === 'FS_STALE_VERSION' || error?.code === 'FS_NOT_OBSERVED') return resourceFailure('bot/conflict', '文件已经变化，请重新读取并保留本地编辑内容。')
   if (['FS_NOT_FOUND', 'FS_NOT_DIRECTORY', 'FS_NOT_REGULAR_FILE'].includes(error?.code)) return resourceFailure('bot/not-found', '目标文件或目录已经不存在或类型改变。')
   if (error?.code === 'FS_TOO_LARGE') return resourceFailure('bot/too-large', '文件超过完整预览和编辑预算。')
   if (error?.code === 'FS_NOT_TEXT') return resourceFailure('bot/encoding', '只支持完整有效的 UTF-8 文本文件。')
@@ -175,8 +175,9 @@ export function install(rt) {
         context.check()
         if (receipt.status !== 'saved' || !receipt.change) throw resourceFailure('bot/not-found', '这次保存没有可读取的已应用修改。')
         const { before, after } = receipt.change
-        const shownBefore = before === null ? null : mask(before)
-        const shownAfter = after === null ? null : mask(after)
+        // 缓存正文已完成字段脱敏，返回前只重新匹配密钥库，保留原遮盖标记。
+        const shownBefore = before === null ? null : rt.redactSecrets(before)
+        const shownAfter = after === null ? null : rt.redactSecrets(after)
         return { schema: 1, source: 'workspace-save', rootId: body.rootId, receiptId: body.receiptId, path: receipt.path,
           requestId: receipt.requestId, version: receipt.newVersion, before: shownBefore, after: shownAfter,
           complete: before !== null && after !== null, redacted: receipt.change.redacted || before !== shownBefore || after !== shownAfter }
@@ -189,13 +190,13 @@ export function install(rt) {
       }
       await secrets(access)
       const located = await locate(context, receipt.path, false, fused)
-      if (located.info.type !== 'file' || located.target.targetKey !== receipt.targetKey || located.info.version !== receipt.version) throw resourceFailure('bot/conflict', '文件版本已变化，本地草稿未保存。')
+      if (located.info.type !== 'file' || located.target.targetKey !== receipt.targetKey || located.info.version !== receipt.version) throw resourceFailure('bot/conflict', '文件版本已变化，本地编辑内容未保存。')
       const bytes = await context.fs.readBytes(located.target, fused, MAX_FILE_BYTES)
       context.check()
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_FILE_BYTES) throw resourceFailure('bot/too-large', '文件超过完整读取预算。')
       let before
       try { before = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) } catch { throw resourceFailure('bot/encoding', '文件不再是有效文本。') }
-      if (resourceDigest(before) !== receipt.digest) throw resourceFailure('bot/conflict', '文件内容已变化，本地草稿未保存。')
+      if (resourceDigest(before) !== receipt.digest) throw resourceFailure('bot/conflict', '文件内容已变化，本地编辑内容未保存。')
       if (mask(before) !== before) throw resourceFailure('bot/refused', '文件现在包含受保护内容，请重新读取；不能保存脱敏预览。')
       await stable(context, receipt.path, located, access, fused)
       access.check()

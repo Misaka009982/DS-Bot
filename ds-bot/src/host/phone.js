@@ -169,9 +169,12 @@ export function install(rt) {
       on: data.on === true,
       status: link?.status ?? 'off',
       ...(reason === undefined ? {} : { error: reason }),
-      phones: registry.list().map(entry => ({ id: entry.deviceId, name: entry.name, pairedAt: entry.pairedAt, kind: entry.kind,
-        connected: connected.has(entry.deviceId), fullMessages: rt.extraFullMessagesAllowed?.(entry) === true,
-        resources: rt.extraResourcePermissions?.(entry) })),
+      phones: registry.list().map(entry => {
+        const resources = rt.extraResourcePermissions?.(entry)
+        return { id: entry.deviceId, name: entry.name, pairedAt: entry.pairedAt, kind: entry.kind,
+          connected: connected.has(entry.deviceId), fullMessages: rt.extraFullMessagesAllowed?.(entry) === true,
+          ...(resources === undefined ? {} : { resources }) }
+      }),
       pairing,
     }
   }

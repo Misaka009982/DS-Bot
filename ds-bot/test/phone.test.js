@@ -368,6 +368,7 @@ test('the link strips pairing offers from feed events without changing the deskt
     const event = await until(async () => events[0], Boolean)
     assert.equal(event.event, 'live')
     const { pairing, ...remote } = desktop
+    assert.equal(desktop.phones.every(entry => !Object.hasOwn(entry, 'resources')), true)
     assert.deepEqual(event.data, { ...data, phone: remote })
     assert.ok(data.phone.pairing.uri)
     assert.ok(data.phone.pairing.browserUri)

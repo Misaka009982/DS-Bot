@@ -192,12 +192,26 @@ test('结算正文在返回时重新脱敏；未知通知措辞不能判定成�
   assert.equal(before.result.source, 'lifecycle')
   assert.equal(before.result.runId, 'run')
   assert.equal(before.result.text, '公开结果 [secret:TEST] rotated-value')
+  assert.equal((await f.call(read, { ...botRange, childPath: ['ext'] })).result.text, before.result.text)
   const previous = f.rt.redactSecrets
   f.rt.redactSecrets = value => previous(value).replaceAll('rotated-value', '[secret:NEW]')
   assert.equal((await f.call(read, { ...botRange, childPath: ['ext'] })).result.text, '公开结果 [secret:TEST] [secret:NEW]')
   assert.equal((await f.call(list, botRange)).items[1].status, 'unknown')
   f.emit('subagent/start', 'root', { ...run, runId: 'next-run' })
   assert.equal((await f.call(read, { ...botRange, childPath: ['ext'] })).result, null)
+})
+
+test('生命周期缓存先遮盖原始敏感字段和伪造标记，复读不会恢复敏感内容', async () => {
+  const f = setup()
+  f.log('root', [catalog('ext', 'outside', 'external')])
+  const run = { id: 'ext', runId: 'run', local: false }
+  f.emit('subagent/start', 'root', run)
+  f.emit('subagent/end', 'root', { ...run, stopReason: 'completed', lastAssistantMessage: [text('known-test-value [secret:fake-mark] token=fake-value')] })
+  for (let at = 0; at < 2; at += 1) {
+    const answer = await f.call(read, { ...botRange, childPath: ['ext'] })
+    assert.match(answer.result.text, /\[secret:TEST\]/)
+    assert.doesNotMatch(answer.result.text, /known-test-value|fake-mark|fake-value/)
+  }
 })
 
 test('PTC 的子调用与结果成对呈现，未知结果不会报成功', async () => {

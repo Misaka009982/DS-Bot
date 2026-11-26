@@ -18,7 +18,7 @@
     { "path": "ds-bot/src/host/turns.js", "anchor": "rt.extraSendPrompt(request" },
     { "path": "ds-bot/src/host/bot-tasks.js", "anchor": "rt.extraKeepForeground?.(sessionId)" },
     { "path": "ds-bot/src/host/channel.js", "anchor": "rt.extraEndpoint(endpoint, body, signal, caller)" },
-    { "path": "ds-bot/src/host/phone.js", "anchor": "rt.extraPairedDevices =", "anchors": ["serverName: readPhoneServerName(data.serverName)", "resources: () => rt.extraResourceAccess?.(deviceOf())", "resources: rt.extraResourcePermissions?.(entry)"] },
+    { "path": "ds-bot/src/host/phone.js", "anchor": "rt.extraPairedDevices =", "anchors": ["serverName: readPhoneServerName(data.serverName)", "resources: () => rt.extraResourceAccess?.(deviceOf())", "const resources = rt.extraResourcePermissions?.(entry)"] },
     { "path": "ds-bot/src/host/remote.js", "anchor": "rt.extraRemoteAccessError?." },
     { "path": "ds-bot/src/host/parts.js", "anchor": "rt.extraStepsItems(events", "anchors": ["if (job.fresh) return rt.extraMoveToFreshPart", "rt.extraStartFreshPart ="] },
     { "path": "ds-bot/src/host/mobile.js", "anchor": "rt.extraProjectMessages?." },

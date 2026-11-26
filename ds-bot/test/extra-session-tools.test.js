@@ -131,10 +131,13 @@ test('宿主未丢弃队列时如实返回未就绪，不自行 remove 输入或
 })
 test('调用参数严格校验，不接受伪造调用方或通过字符串开启丢弃', async t => {
   const host = start(t)
-  for (const args of [{ discard_queued: 'true' }, { discard_queued: null }, { callerId: 'a' }, { permission: 'danger-full-access' }, { reason: '' }, { reason: 'x'.repeat(501) }, { bot: 1 }]) {
-    await assert.rejects(host.pause(args), error => error.code === 'bot/invalid')
+  for (const args of [{ discard_queued: 'true' }, { discard_queued: null }, { bot: 1 }]) {
+    await assert.rejects(host.pause(args), { name: 'ToolArgsError', code: 'INVALID_ARGS' })
   }
-  await assert.rejects(host.call('new_bot_session', { bot: 'Writer', reason: '故障' }), error => error.code === 'bot/invalid')
+  for (const args of [{ callerId: 'a' }, { permission: 'danger-full-access' }, { reason: '' }, { reason: 'x'.repeat(501) }]) {
+    await assert.rejects(host.pause(args), { code: 'bot/invalid' })
+  }
+  await assert.rejects(host.call('new_bot_session', { bot: 'Writer', reason: '故障' }), { name: 'ToolArgsError', code: 'INVALID_ARGS' })
   assert.deepEqual(host.canceled, []); assert.deepEqual(host.freshCalls, [])
 })
 test('只读及宿主能力缺失时拒绝，不调用 cancel 或切换', async t => {

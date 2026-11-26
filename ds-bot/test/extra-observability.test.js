@@ -71,10 +71,10 @@ test('密钥字段、URL 认证和常见 Token 脱敏；正文作为纯文本', 
 
 test('普通 headers、env、environment 和 JSON data 保留正文，嵌套密钥只遮盖值', () => {
   const input = {
-    headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'request-1', Authorization: 'opaque-auth', Cookie: 'opaque-cookie', 'X-Api-Key': 'opaque-header-key' },
+    headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'request-1', Authorization: 'opaque-auth', Cookie: 'opaque-cookie', 'X-Api-Key': 'fake-opaque-header-key' },
     env: { NODE_ENV: 'production', OPENAI_API_KEY: 'opaque-env-key', GITHUB_TOKEN: 'opaque-env-token', DATABASE_PASSWORD: 'opaque-password', DSH_SECRET_OTHER: 'opaque-dsh-secret' },
     environment: { PATH: 'C:/Project/bin' },
-    data: { text: '正常工具输出', rows: [1, 2], tokenCount: 42, secret: 'opaque-data-secret' },
+    data: { text: '正常工具输出', rows: [1, 2], tokenCount: 42, secret: 'fake-opaque-data-secret' },
     message: 'known-secret-value',
   }
   const value = redactValue(input, text => text.replaceAll('known-secret-value', '[secret:TEST]'))
@@ -157,7 +157,7 @@ test('复杂 HTTP 认证全部遮盖，命令中的引号、后续选项和正�
   const quoted = redactText('{"Authorization":"Digest username=\\"opaque-user\\", response=\\"opaque-response\\"","safe":"业务输出"}')
   assert.equal(quoted.includes('opaque-'), false)
   assert.match(quoted, /业务输出/)
-  assert.equal(redactText('bearer sk-not-a-known-format-123456').includes('sk-not-a-known-format-123456'), false)
+  assert.equal(redactText('bearer sk-test-not-a-known-format-123456').includes('sk-test-not-a-known-format-123456'), false)
   const multiline = redactText("PASSWORD='opaque-first\nopaque-second' NODE_ENV=production")
   assert.equal(multiline.includes('opaque-'), false)
   assert.match(multiline, /NODE_ENV=production/)

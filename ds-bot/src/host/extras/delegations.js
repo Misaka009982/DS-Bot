@@ -151,7 +151,7 @@ function settlements({ rows, events, from }) {
 
 function limitedText(text, limit, mask) {
   if (text.length > MAX_SOURCE_TEXT) return { text: null, truncated: true }
-  const value = redactText(text, mask)
+  const value = mask(text)
   return { text: headOf(value, limit), truncated: value.length > limit }
 }
 
@@ -259,7 +259,7 @@ export function install(rt) {
   rt.ctx.on('subagent/end', observeLifecycle(false))
   rt.ctx.effect(() => () => { stop.abort(); runs.clear() }, 'ds-bot: 增补委派读取')
 
-  const mask = text => rt.redactSecrets(text)
+  const mask = text => redactText(text, rt.redactSecrets)
   const assertRedaction = () => {
     if (typeof rt.redactSecrets !== 'function' || rt.secretStoreStatus?.()?.locked !== false) {
       throw failure('bot/unavailable', 'Unlock the secrets store before reading delegation records')
@@ -360,7 +360,8 @@ export function install(rt) {
           const child = childView(value.row, parent, value.notice)
           const run = runs.get(runKey(parent, childId))
           const noticeText = textBlocks(value.notice?.content, 8192, mask)
-          const output = run?.output?.text == null ? run?.output : limitedText(run.output.text, 8192, mask)
+          // 缓存已做字段脱敏，只补查新密钥；通用扫描不能把可信遮盖标记再当成原始输入。
+          const output = run?.output?.text == null ? run?.output : limitedText(run.output.text, 8192, rt.redactSecrets)
           const result = child.statusSource === 'lifecycle' && output != null
             ? { source: 'lifecycle', runId: run.runId, ...output, truncated: run.output.truncated || output.truncated }
             : noticeText === null ? null : { source: 'settlement', seq: value.notice.seq, ...noticeText }
