@@ -192,9 +192,13 @@ test('a Bot assembly can omit sections and tools', async (t) => {
   let filter
   agent.ctx.on = (name, listener) => { if (name === 'system-prompt/assemble' && String(listener).includes('HIDDEN_SECTIONS')) filter = listener; return () => {} }
   await host.agentCreated('a')
-  assert.deepEqual(await filter({}, {}, async () => ({})), {})
-  const result = await filter({}, {}, async () => ({ sections: [{ name: 'team:policy' }, { name: 'keep' }], tools: [{ name: 'subagent' }, { name: 'list_bots' }] }))
+  assert.deepEqual(await filter({}, { agent }, async () => ({})), {})
+  const result = await filter({}, { agent }, async () => ({ sections: [{ name: 'team:policy' }, { name: 'keep' }], tools: [{ name: 'subagent' }, { name: 'list_bots' }] }))
   assert.deepEqual(result, { sections: [{ name: 'keep' }], tools: [{ name: 'list_bots' }] })
+  const foreign = { sections: [{ name: 'team:policy' }], tools: [{ name: 'subagent' }] }
+  for (const context of [{}, { agent: host.agentOf('b') }, { agent: host.agentOf('plain') }]) {
+    assert.equal(await filter({}, context, async () => foreign), foreign)
+  }
 })
 
 test('team-admin filtering preserves other tools and sessions, including empty requests', async (t) => {
@@ -211,10 +215,14 @@ test('team-admin filtering preserves other tools and sessions, including empty r
     if (id === 'plain') { assert.equal(filter, undefined); continue }
     agent.ctx.llm = { stream: options => filter(options, () => options) }
     const available = ['update_bot', 'update_group', 'list_bot_models', 'list_bots', 'save_capability', 'schedule_create', 'group_goal']
-    const options = { tools: [...names, ...available].map(name => ({ name })) }
+    const options = { sessionId: id, tools: [...names, ...available].map(name => ({ name })) }
     const result = filter(options, () => options)
     assert.deepEqual(result.tools.map(tool => tool.name), id === 'a' ? options.tools.map(tool => tool.name) : available)
-    for (const empty of [{}, { tools: [] }]) assert.equal(filter(empty, () => empty), empty)
+    for (const sessionId of ['a', 'b', 'plain', undefined].filter(value => value !== id)) {
+      const foreign = { ...options, sessionId }
+      assert.equal(filter(foreign, () => foreign), foreign)
+    }
+    for (const empty of [{}, { tools: [] }, { sessionId: id }, { sessionId: id, tools: [] }]) assert.equal(filter(empty, () => empty), empty)
   }
 })
 
@@ -269,6 +277,65 @@ for (const main of [false, true]) {
     })
   }
 }
+
+test('真实 DSH 多 Agent 共存时，主 Bot 换段及群聊和后台任务保留管理工具', async (t) => {
+  const team = structuredClone(TEAM)
+  team.bots.a.sessionId = 'a-current'
+  team.bots.a.segments = [{ sessionId: 'a', endedAt: 1 }]
+  team.rooms.r1.sessions = { a: 'a-group', b: 'b-group' }
+  const host = start(team)
+  t.after(host.stop)
+  await host.call('state', {})
+  rt.state.bots.a.tasks = [{ id: 't1', title: 'Work', status: 'running', sessionId: 'a-task', segments: [], startedAt: 2, updatedAt: 2 }]
+  await rt.save()
+  for (const id of ['a-current', 'a-group', 'a-task']) {
+    assert.equal(rt.selfOf(id), 'a')
+    assert.equal(rt.isMainForTurn(id), true)
+  }
+
+  const root = new Context()
+  t.after(() => root.fiber.dispose())
+  await mountAgentLoopTestDependencies(root)
+  const offered = new Map()
+  class Adapter extends LlmAdapter {
+    async resolveModel(provider, id) { return { provider, id, name: id, inputModalities: ['text'], context: { contextWindow: 100000 } } }
+    async *stream(options) {
+      offered.set(options.sessionId, (options.tools ?? []).map(tool => tool.name))
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+  }
+  root.llm.registerAdapter(['role-isolation'], new Adapter())
+  await mountAgentLoopTestHarness(root)
+  root.on('session/event', host.ctx.listeners.get('session/event').find(listener => listener.name === 'freezeBuiltinPacks'))
+  const created = host.ctx.listeners.get('agent/created').find(listener => String(listener).includes('hideBotUnusedTools(agent)'))
+  const agents = new Map()
+  // 同时保留普通 Bot 的私聊和群 Agent，让真实共享 waterfall 穿过全部过滤器。
+  for (const id of ['b', 'b-group', 'a-current', 'a-group', 'a-task']) {
+    const agent = await root.agentLoop.create(SessionId(id), { provider: 'role-isolation', model: 'test' })
+    await created({ agent })
+    agents.set(id, agent)
+  }
+  for (const agent of agents.values()) {
+    agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '检查工具可见性' }] }))
+    await agent.whenIdle()
+  }
+  const admin = BUILTIN_PACKS['team-admin'].tools
+  for (const [id, names] of offered) {
+    for (const name of admin) assert.equal(names.includes(name), id.startsWith('a-'), `${id}: ${name}`)
+    for (const name of ['list_bots', 'update_bot', 'update_group', 'list_bot_models']) assert.ok(names.includes(name), `${id}: ${name}`)
+  }
+  assert.deepEqual([...offered.keys()], [...agents.keys()])
+
+  // 未归属请求不能借用任何 Bot 的角色，也不能被普通 Bot 剪掉工具。
+  for (const sessionId of [SessionId('plain'), undefined]) {
+    for await (const chunk of root.llm.stream({
+      provider: 'role-isolation', model: 'test', sessionId,
+      messages: [createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '辅助请求' }] })],
+      tools: admin.map(name => ({ name, description: name, parameters: { type: 'object', properties: {} } })),
+    })) void chunk
+    assert.deepEqual(offered.get(sessionId), admin)
+  }
+})
 
 test('team tools retry without a step, without registering successful tools twice', async (t) => {
   const host = start()

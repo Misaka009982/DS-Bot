@@ -24,7 +24,7 @@
     { "path": "ds-bot/src/host/mobile.js", "anchor": "rt.extraProjectMessages?." },
     { "path": "ds-bot/src/host/feed.js", "anchor": "function onFeedSessionEvent(session, event)" },
     { "path": "ds-bot/src/host/constants.js", "anchor": "'pause_bot', 'new_bot_session'", "anchors": ["'bot_goal'"] },
-    { "path": "ds-bot/src/host/tools.js", "anchor": "rt.extraPauseGoal?.(target.id," },
+    { "path": "ds-bot/src/host/tools.js", "anchor": "rt.extraPauseGoal?.(target.id,", "anchors": ["if (options.sessionId === undefined || options.sessionId !== agent.session?.id) return next()", "if (sessionId === undefined || sessionId !== agent.session?.id) return next()"] },
     { "path": "ds-bot/src/host/resume.js", "anchor": "rt.extraGoalBlocksResume?.(record)" },
     { "path": "ds-bot/src/host/builtin-packs.js", "anchor": "'pause_bot', 'new_bot_session'" },
     { "path": "ds-bot/src/host/prompt.js", "anchor": "pause_bot 的 new_session_ready=true" },

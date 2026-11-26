@@ -45,7 +45,7 @@
 | `host/feed.js` | 稳定命名原 SSE 会话事件回调供测试定位，不新增监听器、不改变消息发布或权限 |
 | `host/constants.js`、`host/builtin-packs.js` | 登记 `pause_bot`／`new_bot_session` 并纳入原 `team-admin` 包；普通 Bot 默认不可见，执行仍由服务端校验主角色。`constants.js` 另外登记只允许更新自身私聊目标的 `bot_goal` |
 | `host/resume.js` | 不把重启前的目标自动回合转换为普通恢复提示重放，普通用户／协作工作沿用原恢复路径 |
-| `host/tools.js` | 主 Bot 的 `stop_bot` 先冻结目标续跑，再沿用原停止与回执路径 |
+| `host/tools.js` | 主 Bot 的 `stop_bot` 先冻结目标续跑，再沿用原停止与回执路径；内置工具和提示词过滤按请求的稳定 Session ID 隔离，防止普通 Bot 的监听器误删主 Bot 的 `team-admin` 工具 |
 | `client/command-actions.js` | `extras.privateGoal.schema:1` 时，私聊裸 `/goal` 打开目标设置；群入口不变 |
 | `host/prompt.js` | 主 Bot 先暂停并取得回执，再新建干净会话；禁止盲目重试、重放非幂等任务或把切换成功当作故障恢复 |
 | `shared/browser-endpoints.js` | 逐项登记增补端点；团队默认、委派、历史 diff 与资源读写分别验权，完整消息不授予终端／文件权限，不放开原敏感端点或 DSH Agent 浏览器权限 |
@@ -74,6 +74,8 @@ PTY 与工作区已注册有限端点，只有公开服务存在时声明相应�
 团队默认通过 `extra-defaults-set` 串行保存到 `state.extras.defaults`，只接受 `messageMode` 和 `autoArchive`；回包能力为 `extras.defaults: { schema: 1, messageMode, autoArchive }`。消息优先级是 Bot 显式值 → 团队显式值 → 输入框原模式（缺省 queue）。团队消息初值为 `inherit`（使用 DSH 默认值），保持未配置时的原发送行为；显式团队 queue／steer 与 Bot 覆盖一样走真实 prompt 和前台保留链，不修改已有排队消息或群聊、任务、协作、定时输入。
 
 归档默认关闭，Bot 的显式 `true`／`false` 优先；缺失或 `null` 跟随团队默认，Web 和手机可恢复“跟随基础设置”。取消原来“选择 queue 就隐式开启归档”的关联，旧的显式归档设置保持不变；原本只靠 queue 隐式开启的 Bot 会跟随默认关闭，需要在通用基础启用默认或单独开启。仍只处理超过 24 小时的已结束旧段，执行前重新核对当前有效开关和原运行保护，不删除历史。保存失败回退，普通默认值不能混写设备授权或权限字段。
+
+主 Bot 管理工具缺失的修复依据上游 [#2107](https://github.com/Fei-Craft/DS-Bot/issues/2107)、[#2070](https://github.com/Fei-Craft/DS-Bot/pull/2070) 与 [#2123](https://github.com/Fei-Craft/DS-Bot/pull/2123) 的已确认机制：Agent 上注册的监听器也可收到其他 Session 的请求。本增补只回移必要的会话隔离检查；`llm/stream` 核对 `options.sessionId`，`system-prompt/assemble` 核对调用上下文的 Session ID，不比较代理对象引用。没有 Session／Agent 归属的请求保持原样，不借用注册监听器的 Bot 角色。保留现有登记顺序、每轮角色冻结和执行时验权；`bot.packs` 不控制内置 `team-admin`，不能用改团队配置代替修复。
 
 主 Bot 工具复用现有 `cancel`／`whenIdle` 和干净新建流程，不复用会额外发起解释轮次的 `stop_bot`。`discard_queued` 默认 `false`，只有显式 `true` 才允许丢弃队列并报告数量；暂停回执绑定调用方、调用会话、目标当前私聊、模型／权限／工作目录和 10 分钟时效，新输入／新轮次会使其失效。同一前台线程的旧私聊仍有 `state.switching` 标记时拒绝再次操作，不误拦独立群聊或后台任务；`handoff_pending` 与 `recovery_verified` 如实反映交接和未验证恢复。
 
