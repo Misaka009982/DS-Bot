@@ -150,6 +150,16 @@ const gm = (s, senderId, text, { mentioned = true, chat = { key: 'g1', kind: 'gr
   chat, sender: { id: senderId, name: `User ${senderId}` }, text, mentioned, ...extra,
 })
 
+// 等待可观察结果，避免繁忙 CI 把固定睡眠误当作异步发送或落盘完成。
+const waitFor = async (check, message) => {
+  for (let at = 0; at < 200; at += 1) {
+    const value = await check()
+    if (value) return value
+    await delay(20)
+  }
+  assert.fail(message)
+}
+
 const tokenCard = async (s, index = 0) => {
   for (let at = 0; at < 200; at += 1) {
     const card = s.fake.sent.filter(job => /Card V\d+/.test(job.text))[index]
@@ -296,15 +306,21 @@ test('a quoted reply carries the message it answers into the Bot', async (t) => 
   s.imTurn('a')
   s.fake.sent.length = 0
   s.emitEvent('a', 'assistant/message', { message: { content: [{ type: 'text', text: 'Project A is done' }] } })
-  await s.flush()
+  await waitFor(() => s.fake.sent.at(-1)?.messageId, '带引用编号的回复未送达')
   const sentId = s.fake.sent.at(-1)?.messageId
   assert.ok(sentId !== undefined, 'the sent message has an id')
   await dm(s, 'u1', 'ship it', { quote: { ids: [sentId] } })
   assert.equal(s.prompts.length, 2)
   assert.equal(s.prompts[1].content[0].text, 'Replying to an earlier message:\n> Project A is done\n\nship it')
-  // The reply can come after a restart, so the message is kept in the runtime file.
-  await delay(600)
-  const runtime = JSON.parse(readFileSync(join(s.home, 'im', `${conn.id}.json`), 'utf8'))
+  // 回复必须真正落盘，不能靠睡眠时长推定保存已经完成。
+  const runtime = await waitFor(() => {
+    let value
+    try { value = JSON.parse(readFileSync(join(s.home, 'im', `${conn.id}.json`), 'utf8')) } catch (error) {
+      if (error.code === 'ENOENT') return undefined
+      throw error
+    }
+    return value.sent?.['dm-u1']?.some(entry => entry.text === 'Project A is done') ? value : undefined
+  }, '带引用的已发回复没有保存到运行文件')
   assert.ok(runtime.sent['dm-u1'].some(entry => entry.text === 'Project A is done'))
 })
 
@@ -1263,7 +1279,7 @@ test('token view answers enforce pairing, mention, chat, origin, binding and sta
   assert.equal(s.rt.state.views['member-b'].id, id)
   prompts = s.prompts.length
   await gm(s, 'u1', `!card ${code}\n1: 99`)
-  await s.flush()
+  await waitFor(() => s.fake.sent.some(job => job.chat.key === 'g1' && job.text.startsWith('Invalid view answer:')), '非法表单提示未送达')
   assert.ok(s.fake.sent.some(job => job.chat.key === 'g1' && job.text.startsWith('Invalid view answer:')))
   assert.equal(s.prompts.length, prompts)
   assert.equal(s.rt.state.views['member-b'].id, id)
@@ -1566,7 +1582,7 @@ test('legacy bare replies stay private after delivery pruning, rebind and restar
       const prompts = s.prompts.length
       const sent = s.fake.sent.length
       await gm(s, 'u1', text)
-      await s.flush()
+      await waitFor(() => s.fake.sent.slice(sent).some(job => job.chat.key === 'g1' && job.text.includes(`use !card ${code}`)), '旧表单回复拒绝提示未送达')
       assert.equal(s.prompts.length, prompts, text)
       assert.equal(s.rt.state.views.b.id, pending)
       assert.ok(s.fake.sent.slice(sent).some(job => job.chat.key === 'g1' && job.text.includes(`use !card ${code}`)), text)
@@ -2645,21 +2661,21 @@ test('reply origin: cards and approvals leave only on the connection whose chat 
 
   s.rt.state.questions.a = { id: 'q1', question: 'Which?', options: [{ label: 'yes' }, { label: 'no' }] }
   await s.rt.save()
-  await s.flush()
+  await waitFor(() => telegram.sent.some(entry => entry.buttons?.[0]?.data.startsWith('q:')), '提问卡片未送达原连接')
   assert.equal(telegram.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('q:')).length, 1, 'the asking chat got its question card')
   assert.equal(dingtalk.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('q:')).length, 0, 'the other connection got no question card')
   delete s.rt.state.questions.a
 
   s.rt.state.secretRequests = { a: [{ id: 's1', name: 'MY_KEY', purpose: 'for tests', status: 'pending', askedAt: 1 }] }
   await s.rt.save()
-  await s.flush()
+  await waitFor(() => telegram.sent.some(entry => entry.text.includes('MY_KEY')), '密钥请求卡片未送达原连接')
   assert.equal(telegram.sent.filter(entry => entry.text.includes('MY_KEY')).length, 1, 'the asking chat got the secret request')
   assert.equal(dingtalk.sent.filter(entry => entry.text.includes('MY_KEY')).length, 0, 'the other connection got no secret request')
   s.rt.state.secretRequests = {}
 
   s.rt.state.views.a = { id: 'v1', title: 'Pick', view: { type: 'text', text: 'Answer me' } }
   await s.rt.save()
-  await s.flush()
+  await waitFor(() => telegram.sent.some(entry => entry.text.includes('Pick')), '视图卡片未送达原连接')
   assert.equal(telegram.sent.filter(entry => entry.text.includes('Pick')).length, 1, 'the asking chat got the view card')
   assert.equal(dingtalk.sent.filter(entry => entry.text.includes('Pick')).length, 0, 'the other connection got no view card')
   delete s.rt.state.views.a
@@ -2667,7 +2683,7 @@ test('reply origin: cards and approvals leave only on the connection whose chat 
   telegram.sent.length = 0
   dingtalk.sent.length = 0
   void s.fireApprovals({ agent: { id: 'a' }, toolName: 'bash', reason: 'run it', signal: new AbortController().signal }, () => new Promise(() => {}))
-  await s.flush()
+  await waitFor(() => telegram.sent.some(entry => entry.buttons?.[0]?.data.startsWith('a:')), '审批卡片未送达原连接')
   assert.equal(telegram.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('a:')).length, 1, 'the asking chat got the approval card')
   assert.equal(dingtalk.sent.filter(entry => entry.buttons?.[0]?.data.startsWith('a:')).length, 0, 'the other connection got no approval card')
 })
