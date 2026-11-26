@@ -7,15 +7,18 @@ const CHUNK_SIZE = 32 * 1024
 const failure = (code, message) => Object.assign(new Error(message), { code })
 const callOf = event => {
   if (event.type === 'tool/call') return { callId: event.data?.callId, name: event.data?.name, args: event.data?.arguments }
-  if (event.type === 'tool/ptc-dispatch-start') return { callId: event.data?.subCallId, name: event.data?.name, args: event.data?.arguments, parentCallId: event.data?.callId }
+  if (event.type === 'tool/ptc-dispatch-start') return { callId: event.data?.subCallId, name: event.data?.name, args: event.data?.arguments, parentCallId: event.data?.parentCallId ?? event.data?.callId }
   return undefined
 }
 const resultOf = event => {
-  if (event.type === 'tool/result') return { callId: event.data?.message?.toolCallId ?? event.data?.callId, message: event.data?.message }
-  if (event.type === 'tool/ptc-dispatch') return { callId: event.data?.subCallId, message: event.data?.result ?? event.data?.message }
+  if (event.type === 'tool/result') return { callId: event.data?.message?.toolCallId ?? event.data?.callId, message: event.data?.message, meta: event.data?.meta, seq: event.seq }
+  if (event.type === 'tool/ptc-dispatch') return { callId: event.data?.subCallId,
+    message: typeof event.data?.isError === 'boolean' ? event.data : event.data?.result ?? event.data?.message,
+    meta: event.data?.meta, seq: event.seq }
   return undefined
 }
-const statusOf = message => typeof message?.ok === 'boolean' ? message.ok ? 'success' : 'failed' : 'unconfirmed'
+const statusOf = message => typeof message?.isError === 'boolean' ? message.isError ? 'failed' : 'success'
+  : typeof message?.ok === 'boolean' ? message.ok ? 'success' : 'failed' : 'unconfirmed'
 
 export function toolsFromEvents(events, sessionId, { seedTurn, hidden = [], labelFor = () => null } = {}) {
   let turn = seedTurn
@@ -37,29 +40,36 @@ export function toolsFromEvents(events, sessionId, { seedTurn, hidden = [], labe
   }
   return calls.map(call => {
     const message = results.get(call.callId)
-    return { ...call, ...(typeof message?.ok === 'boolean' ? { ok: message.ok } : {}), status: statusOf(message) }
+    const status = statusOf(message)
+    return { ...call, ...(status === 'unconfirmed' ? {} : { ok: status === 'success' }), status }
   })
 }
 
-async function findCall(rt, scope, body, signal) {
+export async function findCall(rt, scope, body, signal) {
   if (typeof body.callId !== 'string' || body.callId === '' || body.callId.length > 200) throw failure('bot/invalid', 'Choose a tool call')
   if (body.callSeq !== undefined && body.callSeq !== null && (!Number.isSafeInteger(body.callSeq) || body.callSeq < scope.minSeq)) throw failure('bot/refused', 'This call is outside the session history boundary')
   let before
   let found
   let result
+  let resultMeta, resultSeq
   for (let pages = 0; pages < SCAN_PAGES; pages += 1) {
     const page = await logPage(rt, scope, before, signal)
-    for (const event of page.events) {
+    for (let at = page.events.length - 1; at >= 0; at -= 1) {
+      const event = page.events[at]
       const ended = resultOf(event)
-      if (ended?.callId === body.callId) result ??= ended.message
+      if (ended?.callId === body.callId) { result = ended.message; resultMeta = ended.meta; resultSeq = ended.seq }
       const call = callOf(event)
-      if (call?.callId === body.callId && (body.callSeq == null || event.seq === body.callSeq)) found = { event, call }
+      if (call?.callId !== body.callId) continue
+      if (body.callSeq == null || event.seq === body.callSeq) { found = { event, call }; break }
+      // 较新的同编号调用是关联边界，不能把它的结果接到指定的旧调用。
+      result = resultMeta = resultSeq = undefined
     }
     if (found !== undefined || page.beforeSeq === null) break
     before = page.beforeSeq
   }
   // 老调用可用明确的 seq 定位，输出若不在本次扫描范围内则如实显示未提供。
   if (found === undefined && Number.isSafeInteger(body.callSeq)) {
+    result = resultMeta = resultSeq = undefined
     const page = await logPage(rt, scope, body.callSeq + 1, signal)
     const event = page.events.find(event => event.seq === body.callSeq && callOf(event)?.callId === body.callId)
     if (event !== undefined) found = { event, call: callOf(event) }
@@ -69,7 +79,7 @@ async function findCall(rt, scope, body, signal) {
   if (scope.includeHidden !== true && ((rt.state.exchangeTurns?.[scope.id]?.length ?? 0) > 0 && turn === undefined || hiddenTurn(rt, scope, turn))) {
     throw failure('bot/refused', 'Allow full messages for this paired device on the computer first')
   }
-  return { ...found, result, turn }
+  return { ...found, result, resultMeta, resultSeq, turn }
 }
 
 function outputOf(message) {

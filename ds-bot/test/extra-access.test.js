@@ -32,3 +32,26 @@ test('基础插话模式在异步 inbox 插入期间保留，并发请求不会�
   bot.extras = { messageMode: 'queue' }
   await rt.extraSendPrompt({ sessionId: 'current', mode: 'steer' }, async request => assert.equal(request.mode, 'queue'))
 })
+
+test('团队默认穿过原生 prompt 和前台交接，群聊、后台与内部消息保持原模式', async () => {
+  const bot = { id: 'bot' }
+  const owners = new Map([['current', 'bot'], ['task', 'bot']])
+  const rt = { state: { extras: { defaults: { messageMode: 'steer' } } }, chatOwners: owners,
+    taskOwners: new Map([['task', { botId: 'bot' }]]), groupOwners: new Map([['group', { botId: 'bot' }]]),
+    botOf: id => id === bot.id ? bot : undefined, selfOf: id => owners.get(id) }
+  installPrompt(rt)
+  assert.equal(rt.extraKeepForeground('current'), true)
+  assert.equal(rt.extraKeepForeground('task'), false)
+  assert.equal(rt.extraKeepForeground('another'), false)
+  await rt.extraSendPrompt({ sessionId: 'current', mode: 'queue' }, async request => assert.equal(request.mode, 'steer'))
+  for (const request of [{ sessionId: 'task', mode: 'queue' }, { sessionId: 'group', mode: 'queue' },
+    { sessionId: 'current', mode: 'queue', source: { kind: 'bot' } }]) {
+    await rt.extraSendPrompt(request, async delivered => assert.equal(delivered, request))
+  }
+  bot.extras = { messageMode: 'queue' }
+  await rt.extraSendPrompt({ sessionId: 'current', mode: 'steer' }, async request => assert.equal(request.mode, 'queue'))
+  bot.extras.messageMode = null
+  rt.state.extras.defaults.messageMode = null
+  assert.equal(rt.extraKeepForeground('current'), false)
+  await rt.extraSendPrompt({ sessionId: 'current', mode: 'steer' }, async request => assert.equal(request.mode, 'steer'))
+})

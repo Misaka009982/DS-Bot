@@ -28,7 +28,7 @@ export interface Bot {
   role?: string
   // The DSH permission preset the Bot runs with; unset runs on the default one.
   permission?: string
-  extras?: { messageMode?: 'queue' | 'steer' | null; autoArchive?: boolean }
+  extras?: { messageMode?: 'queue' | 'steer' | null; autoArchive?: boolean | null }
   // A credential or balance failure that stops the Bot until the user fixes it (turns.js).
   blocked?: { code: string; status?: number; provider?: string; at?: number }
   color?: string
@@ -161,7 +161,7 @@ export interface TeamState {
   activity?: Record<string, { tool?: string; said?: string; note?: string; target?: string; switching?: boolean }>
   exchangeTurns?: Record<string, number[]>
   prefs?: { theme?: string; accent?: string; layout?: string; width?: number; flatWidth?: number }
-  extras?: { schema: number; baseline?: string; remotePermissions?: boolean; fullMessages?: boolean }
+  extras?: { schema: number; baseline?: string; remotePermissions?: boolean; fullMessages?: boolean; defaults?: { schema: number; messageMode: 'inherit' | 'queue' | 'steer'; autoArchive: boolean } }
 }
 
 /** A card as the computer keeps it: `view` is the root node of the blueprint. */

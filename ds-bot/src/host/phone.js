@@ -109,6 +109,7 @@ export function install(rt) {
     const answer = await serve(endpoint, params?.payload ?? null, signal, { authorize,
       fullMessages: () => rt.extraFullMessagesAllowed?.(deviceOf()) === true,
       deviceKind: () => deviceOf()?.kind,
+      resources: () => rt.extraResourceAccess?.(deviceOf()),
     })
     const result = endpoint === 'state' && answer?.ok === true ? { ...answer, value: remoteView(answer.value) } : answer
     if (wanted === undefined || result?.ok !== true || rt.state.revision === before) return finish(result)
@@ -169,7 +170,8 @@ export function install(rt) {
       status: link?.status ?? 'off',
       ...(reason === undefined ? {} : { error: reason }),
       phones: registry.list().map(entry => ({ id: entry.deviceId, name: entry.name, pairedAt: entry.pairedAt, kind: entry.kind,
-        connected: connected.has(entry.deviceId), fullMessages: rt.extraFullMessagesAllowed?.(entry) === true })),
+        connected: connected.has(entry.deviceId), fullMessages: rt.extraFullMessagesAllowed?.(entry) === true,
+        resources: rt.extraResourcePermissions?.(entry) })),
       pairing,
     }
   }

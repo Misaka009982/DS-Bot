@@ -14,16 +14,26 @@ export function cleanBotExtras(value) {
     out.messageMode = MODES.has(mode) ? mode : null
   }
   if (Object.hasOwn(value, 'autoArchive')) {
-    if (typeof value.autoArchive !== 'boolean') throw invalid('Auto archive must be on or off')
-    out.autoArchive = value.autoArchive
+    if (value.autoArchive !== null && value.autoArchive !== 'inherit' && typeof value.autoArchive !== 'boolean') throw invalid('Choose on, off or inherit for auto archive')
+    out.autoArchive = typeof value.autoArchive === 'boolean' ? value.autoArchive : null
   }
   return out
 }
 
-export function messageMode(settings, requested) {
-  if (requested !== undefined && requested !== null && !MODES.has(requested)) throw invalid('Choose queue or steer')
-  return MODES.has(settings?.messageMode) ? settings.messageMode : MODES.has(requested) ? requested : 'queue'
+export function cleanDefaults(value) {
+  const out = cleanBotExtras(value)
+  if (Object.keys(out).length === 0 || Object.hasOwn(out, 'autoArchive') && typeof out.autoArchive !== 'boolean') throw invalid('Choose a default message mode or archive state')
+  return out
 }
+
+export function messageMode(settings, requested, defaults) {
+  if (requested !== undefined && requested !== null && !MODES.has(requested)) throw invalid('Choose queue or steer')
+  if (MODES.has(settings?.messageMode)) return settings.messageMode
+  if (MODES.has(defaults?.messageMode)) return defaults.messageMode
+  return MODES.has(requested) ? requested : 'queue'
+}
+
+export const autoArchive = (settings, defaults) => typeof settings?.autoArchive === 'boolean' ? settings.autoArchive : defaults?.autoArchive === true
 
 // 名称和客户端自报的类别都不是授权依据；device 只能取宿主的已配对记录。
 export function remotePermissionError(enabled, device, endpoint, payload) {

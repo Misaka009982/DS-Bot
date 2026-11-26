@@ -24,8 +24,8 @@ const TEAM = {
 const server = await startRelayServer()
 after(() => server.close())
 
-function open(home) {
-  const ctx = fakeContext()
+function open(home, services = {}) {
+  const ctx = fakeContext({ services })
   const register = ctx.connection.fetch.register
   ctx.connection.fetch.register = (route) => { ctx.route = route; return register(route) }
   apply(ctx, { home, github: false })
@@ -170,10 +170,52 @@ test('完整消息逐设备授权，远程不能修改电脑授权且撤销立�
   assert.equal((await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: true })).ok, true)
   assert.equal((await read()).value.fullMessages, true)
   assert.equal((await remote.client.rpc('bot', { endpoint: 'state' })).value.extras.fullMessages, true)
+  const listDelegations = () => remote.client.rpc('bot', { endpoint: 'extra-delegation-list', payload: { scope: { kind: 'bot', botId: 'm1' }, rootSessionId: 'm1' } })
+  assert.equal((await listDelegations()).error.code, 'bot/unavailable', '授权后进入真实服务门禁；测试宿主没有委派服务')
   assert.equal((await remote.client.rpc('bot', { endpoint: 'phone-extra-set', payload: { remotePermissions: true } })).error.code, 'bot/refused')
   assert.equal((await remote.client.rpc('bot', { endpoint: 'update-bot', payload: { id: 'm1', permission: 'danger-full-access' } })).error.code, 'bot/refused')
   await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: false })
   assert.equal((await read()).error.code, 'bot/refused')
+  assert.equal((await listDelegations()).error.code, 'bot/refused')
+  await remote.client.close()
+})
+
+test('资源读写授权经过真实加密配对和端点上下文，远程不能自行授权', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'dsb-resource-grant-'))
+  writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
+  const services = {
+    fs: { resolve() {}, stat() {}, lstat() {}, contains() {}, processPath() {}, processPathFromHostPath() {}, readBytes() {}, listDir() {}, writeText() {} },
+    sessionQuery: { observeSession() { assert.fail('空终端列表无需读取会话正文') } },
+    subprocess: { spawnTerminal() { assert.fail('只读请求不能创建终端') }, terminalEnvironment() {}, resolveExecutable() {} },
+  }
+  const desk = open(home, services)
+  t.after(async () => { await desk.ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await desk.call('phone-set', { server: server.url, on: true })
+  await until(() => desk.call('state', {}), state => state.value.phone.status === 'online')
+  const paired = await desk.call('phone-pair', {})
+  const offer = parsePairingUri(paired.value.pairing.browserUri)
+  const remote = phone(offer, { pairingCode: offer.code, name: 'resource-reader' })
+  await remote.client.connect()
+  const entry = (await desk.call('state', {})).value.phone.phones[0]
+  const list = () => remote.client.rpc('bot', { endpoint: 'extra-terminal-list', payload: { scope: { kind: 'bot', botId: 'm1' }, sessionId: 'm1' } })
+  const change = () => remote.client.rpc('bot', { endpoint: 'extra-tool-change', payload: { sessionId: 'm1', callId: 'absent', callSeq: 0 } })
+  assert.equal((await change()).error.code, 'bot/refused')
+  assert.equal((await list()).error.code, 'bot/refused')
+  await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: true })
+  assert.equal((await list()).error.code, 'bot/refused')
+  const resources = { terminalRead: true }
+  assert.equal((await remote.client.rpc('bot', { endpoint: 'phone-extra-set', payload: { deviceId: entry.id, pairedAt: entry.pairedAt, resources } })).error.code, 'bot/refused')
+  assert.equal((await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, resources })).ok, true)
+  assert.deepEqual((await list()).value.items, [])
+  const capabilities = (await remote.client.rpc('bot', { endpoint: 'extra-status', payload: {} })).value
+  assert.deepEqual(capabilities.terminals, { schema: 1, read: true, write: false })
+  assert.deepEqual(capabilities.workspace, { schema: 1, read: false, write: false })
+  assert.deepEqual(capabilities.toolChanges, { schema: 1, read: true })
+  await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, fullMessages: false })
+  assert.equal((await change()).error.code, 'bot/refused')
+  assert.deepEqual((await list()).value.items, [])
+  await desk.call('phone-extra-set', { deviceId: entry.id, pairedAt: entry.pairedAt, resources: { terminalRead: false } })
+  assert.equal((await list()).error.code, 'bot/refused')
   await remote.client.close()
 })
 

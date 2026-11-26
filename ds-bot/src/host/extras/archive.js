@@ -1,10 +1,11 @@
 import { HISTORY_TIMEOUT_MS } from '../constants.js'
+import { autoArchive } from './settings.js'
 
 export const DAY_MS = 24 * 60 * 60_000
 const SETTLED = new Set(['completed', 'failed', 'interrupted', 'stopped'])
 const BATCH_SIZE = 32
 const INTERVAL_MS = 5 * 60_000
-const enabled = bot => bot?.extras?.autoArchive === true || (bot?.extras?.autoArchive === undefined && bot?.extras?.messageMode === 'queue')
+const enabled = (rt, bot) => autoArchive(bot?.extras, rt.state.extras?.defaults)
 const stamp = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 const current = (rt, id) => [rt.chatOwners, rt.taskOwners, rt.groupOwners, rt.roomOwners].some(owners => owners?.has(id))
 const queued = agent => (agent?.inbox?.nextTurn?.length ?? 0) + (agent?.inbox?.nextStep?.length ?? 0) > 0
@@ -27,7 +28,7 @@ export function archiveCandidates(rt, now = Date.now()) {
     items.push({ bot, record, task, sessionId, lastAt })
   }
   for (const bot of Object.values(rt.state.bots ?? {})) {
-    if (!enabled(bot)) continue
+    if (!enabled(rt, bot)) continue
     for (const segment of bot.segments ?? []) add(bot, segment)
     for (const task of bot.tasks ?? []) {
       if (!SETTLED.has(task?.status)) continue
@@ -47,7 +48,7 @@ export function archiveBlocked(rt, sessionId, scheduled = new Set()) {
   if (live?.turn !== undefined || live?.pending !== undefined || live?.info !== undefined || live?.switching === true) return true
   const agent = loadedAgent(rt, sessionId)
   if (queued(agent) || typeof agent?.status === 'string' && !['idle', 'stopped'].includes(agent.status)) return true
-  if (rt.waitsForApproval?.(sessionId) === true || (rt.runningJobs?.(sessionId)?.length ?? 0) > 0 || rt.hasSubagents?.(sessionId) === true) return true
+  if (rt.waitsForApproval?.(sessionId) === true || (rt.runningJobs?.(sessionId)?.length ?? 0) > 0 || rt.hasSubagents?.(sessionId) === true || rt.extraHasTerminals?.(sessionId) === true) return true
   for (const key of ['questions', 'views', 'switching', 'approvals', 'inflight']) {
     const entries = rt.state[key]
     if (entries !== null && typeof entries === 'object' && (Object.hasOwn(entries, sessionId) || hasReference(entries, sessionId))) return true
@@ -81,11 +82,11 @@ export async function archiveExpired(rt, now = Date.now(), halted = () => false,
     if (rt.readOnly() !== undefined || halted()) break
     const { sessionId, bot, task } = candidate
     result.checked += 1
-    if (!enabled(bot) || rt.botOf(bot.id) !== bot || task !== undefined && !SETTLED.has(task.status) || archiveBlocked(rt, sessionId, scheduled)) { result.skipped += 1; continue }
+    if (!enabled(rt, bot) || rt.botOf(bot.id) !== bot || task !== undefined && !SETTLED.has(task.status) || archiveBlocked(rt, sessionId, scheduled)) { result.skipped += 1; continue }
     try {
       const page = await rt.ctx.sessionController.page({ address: { kind: 'session', sessionId }, maxMessages: 1 }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
       const lastAt = Math.max(candidate.lastAt, ...(page?.records ?? []).map(record => stamp(record?.event?.time)))
-      if (lastAt >= now - DAY_MS || halted() || rt.readOnly() !== undefined || archiveBlocked(rt, sessionId, scheduled)) { result.skipped += 1; continue }
+      if (lastAt >= now - DAY_MS || halted() || !enabled(rt, bot) || rt.botOf(bot.id) !== bot || rt.readOnly() !== undefined || archiveBlocked(rt, sessionId, scheduled)) { result.skipped += 1; continue }
       await registry.archiveSession(sessionId)
       if (!registry.archivedSessionIds.includes(sessionId)) { result.skipped += 1; continue }
       result.archived += 1

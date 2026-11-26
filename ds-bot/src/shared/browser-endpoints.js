@@ -16,8 +16,12 @@ export const BROWSER_ALLOWED = new Set([
   // Bot background tasks
   'bot-stop-task',
   // 增补的只读消息／工具／待办接口；fullMessages 仍由电脑逐设备验权。
-  'extra-status', 'extra-tool-detail', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read',
-  'extra-bot-set', 'extra-new-session',
+  'extra-status', 'extra-tool-detail', 'extra-tool-change', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read',
+  'extra-delegation-list', 'extra-delegation-read',
+  'extra-bot-set', 'extra-defaults-set', 'extra-new-session',
+  // 资源端点由服务端逐设备分开校验读写授权、根目录与句柄归属。
+  'extra-terminal-list', 'extra-terminal-read', 'extra-terminal-create', 'extra-terminal-input', 'extra-terminal-resize', 'extra-terminal-close',
+  'extra-workspace-open', 'extra-workspace-list', 'extra-workspace-read', 'extra-workspace-save', 'extra-workspace-save-status', 'extra-workspace-change',
   // Side questions
   'side-new', 'side-ask', 'side-cancel', 'side-close',
   // Bot and group management

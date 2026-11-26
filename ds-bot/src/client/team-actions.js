@@ -173,8 +173,11 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
     createRoom: (members, options = {}) => after(call('create-room', { members, ...options })),
     updateBot: (id, patch) => after(call('update-bot', { id, ...patch })),
     extraSetBot: (id, patch) => after(call('extra-bot-set', { id, ...patch })),
+    extraSetDefaults: patch => after(call('extra-defaults-set', patch)),
     extraNewSession: (botId, sessionId) => after(call('extra-new-session', { botId, sessionId })),
     extraPhoneSet: body => after(call('phone-extra-set', body)),
+    extraUserTerminals: () => call('extra-terminal-list', { owned: true }),
+    extraCloseTerminal: handleId => call('extra-terminal-close', { handleId }),
     // Give up one wait the Bot has on a hand-off that will not come back.
     abandonWork: id => after(call('abandon-work', { id })),
     refreshModels: () => after(call('models')).catch(() => {}),

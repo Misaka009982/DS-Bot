@@ -36,6 +36,7 @@ import { t } from './i18n.js'
 import { PREFERENCE_ITEMS, SettingsPreferences } from './settings-preferences.js'
 import { SettingsPalette, isMac } from './settings-palette.js'
 import { OverviewPage } from './settings-overview.js'
+import { DefaultExtras } from './extras/settings.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
@@ -324,7 +325,8 @@ function GeneralPage({ roster, actions, run, dsh, openAdvanced = 0 }) {
         prefs.defaultBotModel ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => run(actions.setPrefs({ defaultBotModel: null })) }, t('Reset')) : null),
       h(SetRow, { label: t('Enter sends message') },
         h(Switch, { label: t('Enter sends message'), on: prefs.enterToSend !== false, onChange: enterToSend => run(actions.setPrefs({ enterToSend })) })),
-      basicDsh.includes('composer-enter') ? dshItem(dsh, 'composer-enter') : null),
+      h(DefaultExtras, { roster, actions, run, Row: SetRow, Switch }),
+      basicDsh.includes('composer-enter') && !(roster.extras?.defaults?.schema === 1 && ['queue', 'steer'].includes(roster.extras.defaults.messageMode)) ? dshItem(dsh, 'composer-enter') : null),
     h(LocationsSection, { key: 'places', actions, run }),
     h(SetSection, { key: 'more', className: 'bt-dsh-items' },
       h('button', {

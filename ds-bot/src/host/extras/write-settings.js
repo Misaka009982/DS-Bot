@@ -1,4 +1,6 @@
-import { cleanBotExtras } from './settings.js'
+import { cleanBotExtras, cleanDefaults } from './settings.js'
+import { randomUUID } from 'node:crypto'
+import { cleanResourceGrant } from './resources.js'
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
 const failure = (code, message) => Object.assign(new Error(message), { code })
@@ -28,18 +30,46 @@ export function install(rt) {
         }
         return next
       }
+      if (endpoint === 'extra-defaults-set') {
+        const patch = cleanDefaults(body)
+        const previous = rt.state.extras
+        const next = { ...record(previous), defaults: { ...record(previous?.defaults), ...patch } }
+        rt.state.extras = next
+        try { await rt.save({ required: true }) } catch (error) {
+          if (rt.state.extras === next) {
+            if (previous === undefined) delete rt.state.extras
+            else rt.state.extras = previous
+          }
+          throw error
+        }
+        return rt.extraView()
+      }
       if (endpoint !== 'phone-extra-set') throw failure('bot/not-found', 'Unknown extra endpoint')
       const keys = Object.keys(body)
       let patch
       if (keys.every(key => key === 'remotePermissions') && typeof body.remotePermissions === 'boolean') {
         patch = { remotePermissions: body.remotePermissions }
-      } else if (keys.every(key => ['deviceId', 'pairedAt', 'fullMessages'].includes(key)) && typeof body.deviceId === 'string' && typeof body.fullMessages === 'boolean') {
+      } else if (keys.every(key => ['deviceId', 'pairedAt', 'fullMessages', 'resources'].includes(key)) && typeof body.deviceId === 'string'
+        && (typeof body.fullMessages === 'boolean' || body.resources !== undefined)
+        && (body.fullMessages === undefined || typeof body.fullMessages === 'boolean')) {
         const devices = rt.extraPairedDevices?.() ?? []
         const device = devices.find(entry => entry.deviceId === body.deviceId)
         if (device === undefined || typeof body.pairedAt !== 'number' || device.pairedAt !== body.pairedAt) throw failure('bot/stale', 'The paired device changed. Refresh and authorize it again.')
         const activeIds = new Set(devices.map(entry => entry.deviceId))
         const kept = Object.fromEntries(Object.entries(record(rt.state.extras?.deviceAccess)).filter(([id]) => activeIds.has(id)))
-        patch = { deviceAccess: { ...kept, [device.deviceId]: { identityKey: device.identityKey, pairedAt: device.pairedAt, fullMessages: body.fullMessages } } }
+        const saved = Object.hasOwn(kept, device.deviceId) ? kept[device.deviceId] : undefined
+        const previousGrant = saved?.identityKey === device.identityKey && saved?.pairedAt === device.pairedAt ? saved : {}
+        const nextGrant = { ...previousGrant, identityKey: device.identityKey, pairedAt: device.pairedAt,
+          ...(body.fullMessages === undefined ? {} : { fullMessages: body.fullMessages }) }
+        if (body.resources !== undefined) {
+          const resources = { ...record(previousGrant.resources), ...cleanResourceGrant(body.resources) }
+          if (body.resources.terminalRead === false) resources.terminalWrite = false
+          if (body.resources.filesRead === false) resources.filesWrite = false
+          if (resources.terminalWrite === true && resources.terminalRead !== true || resources.filesWrite === true && resources.filesRead !== true) throw failure('bot/invalid', '请先允许资源读取，再允许对应写入。')
+          nextGrant.resources = resources
+          nextGrant.resourceRevision = randomUUID()
+        }
+        patch = { deviceAccess: { ...kept, [device.deviceId]: nextGrant } }
       } else {
         throw failure('bot/invalid', 'Choose an extra authorization switch')
       }

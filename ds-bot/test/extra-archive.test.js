@@ -4,7 +4,7 @@ import { archiveCandidates, archiveBlocked, archiveExpired, DAY_MS } from '../sr
 
 function runtime() {
   const bot = {
-    id: 'bot', sessionId: 'current', extras: { messageMode: 'queue' },
+    id: 'bot', sessionId: 'current', extras: { messageMode: 'queue', autoArchive: true },
     segments: [{ sessionId: 'old', endedAt: 1 }],
     tasks: [
       { id: 'ended', sessionId: 'done', status: 'completed', endedAt: 1, updatedAt: 1 },
@@ -38,6 +38,25 @@ test('只选超过24小时的已结束后台会话和旧段，不选择当前、
   assert.equal(archiveCandidates(rt, DAY_MS * 3).length, 0)
 })
 
+test('归档跟随团队默认且读取期间关闭默认会阻止后续归档', async () => {
+  const { rt, bot, calls } = runtime()
+  delete bot.extras.autoArchive
+  assert.equal(archiveCandidates(rt, DAY_MS + 2).length, 0)
+  rt.state.extras = { defaults: { autoArchive: true } }
+  assert.equal(archiveCandidates(rt, DAY_MS + 2).length, 2)
+  bot.extras.autoArchive = false
+  assert.equal(archiveCandidates(rt, DAY_MS + 2).length, 0)
+  bot.extras.autoArchive = null
+  rt.ctx.sessionController.page = async () => {
+    rt.state.extras.defaults.autoArchive = false
+    return { records: [], hasMore: false }
+  }
+  await archiveExpired(rt, DAY_MS + 2)
+  assert.deepEqual(calls, [])
+  bot.extras.autoArchive = true
+  assert.equal(archiveCandidates(rt, DAY_MS + 2).length, 2)
+})
+
 test('排队、审批、切段和作业都阻止归档', () => {
   const { rt, agents } = runtime()
   agents.set('done', { inbox: { nextTurn: [{}], nextStep: [] } })
@@ -50,6 +69,9 @@ test('排队、审批、切段和作业都阻止归档', () => {
   assert.equal(archiveBlocked(rt, 'done'), true)
   delete rt.state.switching.done
   rt.runningJobs = id => id === 'done' ? [{}] : []
+  assert.equal(archiveBlocked(rt, 'done'), true)
+  rt.runningJobs = () => []
+  rt.extraHasTerminals = id => id === 'done'
   assert.equal(archiveBlocked(rt, 'done'), true)
 })
 

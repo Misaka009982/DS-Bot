@@ -61,6 +61,24 @@ test('增补新建会话传入用户确认的 Session，成功后刷新团队状
   assert.equal(pulls(), 1)
 })
 
+test('全局默认消息方式与归档通过固定接口保存，并刷新团队状态', async () => {
+  const { actions, sent, pulls } = bench()
+  await actions.extraSetDefaults({ messageMode: 'steer' })
+  await actions.extraSetDefaults({ autoArchive: true })
+  assert.deepEqual(sent, [
+    ['extra-defaults-set', { messageMode: 'steer' }],
+    ['extra-defaults-set', { autoArchive: true }],
+  ])
+  assert.equal(pulls(), 2)
+})
+
+test('终端清理通过固定列表和句柄关闭，不创建或发送命令', async () => {
+  const { actions, sent } = bench()
+  await actions.extraUserTerminals()
+  await actions.extraCloseTerminal('handle-1')
+  assert.deepEqual(sent, [['extra-terminal-list', { owned: true }], ['extra-terminal-close', { handleId: 'handle-1' }]])
+})
+
 test('openModels opens DS Bot settings on the Models page and closes the menus', () => {
   const { actions, ui } = bench()
   actions.openModels()

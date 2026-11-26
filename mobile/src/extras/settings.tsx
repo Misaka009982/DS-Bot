@@ -78,6 +78,8 @@ export function BotExtras({ bot }: { bot: Bot }) {
   const [error, setError] = useState('')
   if (team?.extras?.schema !== 1) return null
   const mode = bot.extras?.messageMode ?? 'inherit'
+  const defaults = team.extras.defaults?.schema === 1 ? team.extras.defaults : undefined
+  const archiveMode = typeof bot.extras?.autoArchive === 'boolean' ? bot.extras.autoArchive ? 'on' : 'off' : 'inherit'
   const save = (patch: Record<string, unknown>) => {
     if (busy) return
     setBusy(true); setError('')
@@ -92,8 +94,13 @@ export function BotExtras({ bot }: { bot: Bot }) {
     </Pressable>)}
     <Text style={[typeScale.small, { color: p.ink2 }]}>{text('Applies to new messages. Steer is read at the next safe model/tool boundary; no ↑ click is needed.')}</Text>
     <Text style={[typeScale.settingsRow, { color: p.ink }]}>{text('Archive inactive sessions')}</Text>
-    <Switch value={bot.extras?.autoArchive ?? mode === 'queue'} disabled={busy || !online} onValueChange={autoArchive => save({ autoArchive })}
-      trackColor={{ false: p.line2, true: p.accent }} thumbColor={p.knob} />
+    {defaults ? <View style={{ gap: 4 }}>
+      {(['inherit', 'on', 'off'] as const).map(id => <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: archiveMode === id, disabled: busy || !online }} disabled={busy || !online}
+        onPress={() => save({ autoArchive: id === 'inherit' ? null : id === 'on' })} style={{ paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, backgroundColor: archiveMode === id ? p.hover : 'transparent' }}>
+        <Text style={[typeScale.small, { color: archiveMode === id ? p.accent : p.ink }]}>{id === 'inherit' ? extraText('Follow basic settings ({value})', getLang(), { value: text(defaults.autoArchive ? 'On' : 'Off') }) : text(id === 'on' ? 'On' : 'Off')}</Text>
+      </Pressable>)}
+    </View> : <Switch value={bot.extras?.autoArchive ?? mode === 'queue'} disabled={busy || !online} onValueChange={autoArchive => save({ autoArchive })}
+      trackColor={{ false: p.line2, true: p.accent }} thumbColor={p.knob} />}
     <Text style={[typeScale.small, { color: p.ink2 }]}>{text('Only ended background sessions and earlier parts inactive for over 24 hours. Keeps history; skips queues, approvals and running work.')}</Text>
     {error ? <Text accessibilityRole="alert" style={[typeScale.small, { color: p.danger }]}>{error}</Text> : null}
   </View>

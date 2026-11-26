@@ -159,6 +159,11 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'on session/event',
     'on agent/inbox/inserted',
     'effect ds-bot: 主 Bot 会话工具',
+    'on subagent/start',
+    'on subagent/end',
+    'effect ds-bot: 增补委派读取',
+    'effect ds-bot: 增补工作区资源',
+    'effect ds-bot: 增补服务器终端',
   ])
 })
 

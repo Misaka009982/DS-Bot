@@ -5,6 +5,7 @@ import { dateLocale, t } from './i18n.js'
 import { browserPairingUrl } from './phone-browser.js'
 import { deviceLabel } from './extras/device-name.js'
 import { DeviceMessages, RemoteAuthorization } from './extras/settings.js'
+import { DeviceResources, UserTerminals } from './extras/device-resources.js'
 import { PhoneServerName } from './extras/phone-name.js'
 
 const OFF = { server: '', on: false, status: 'off', phones: [], pairing: null }
@@ -178,5 +179,7 @@ export function PhonePage({ roster, actions, Section, Row }) {
         label: deviceLabel(entry, t),
         hint: entry.connected ? t('Connected') : t('Paired on {date}', { date: new Date(entry.pairedAt).toLocaleDateString(dateLocale(), { dateStyle: 'medium' }) }),
       }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm', disabled: busy, onClick: () => void run(actions.phoneRemove(entry.id)) }, t('Remove'))),
-      roster.extras?.schema === 1 ? h(DeviceMessages, { entry, actions, Switch, run }) : null))))
+      roster.extras?.schema === 1 ? h(DeviceMessages, { entry, actions, Switch, run }) : null,
+      h(DeviceResources, { entry, extras: roster.extras, actions, Switch, run })))),
+    h(UserTerminals, { extras: roster.extras, actions, Section }))
 }
