@@ -6,9 +6,9 @@
     "tag": "v0.3.10",
     "commit": "d104d9ca18d69a35460f14e15dff4d553181433a"
   },
-  "addonVersion": "1.0.0",
-  "packageVersion": "0.3.10-addons.1",
-  "releaseTag": "addons-v0.3.10-1.0.0",
+  "addonVersion": "1.1.0",
+  "packageVersion": "0.3.10-addons.2",
+  "releaseTag": "addons-v0.3.10-1.1.0",
   "packageName": "ds-bot",
   "nodeVersion": "24",
   "generated": ["ds-bot/client.js", "ds-bot/link.js", "ds-bot/office.js"],

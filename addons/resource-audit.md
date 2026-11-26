@@ -4,7 +4,7 @@
 
 ## 已实现的服务端范围
 
-委派、用户 PTY、受限工作区文件和历史修改记录已写入独立增补模块。委派协议见 [delegations.md](delegations.md)，资源 DTO、预算、授权和结果状态见 [resources.md](resources.md)。源码和回归定义不等于可安装成品；生成客户端、实机验证与发布仍未完成。
+委派、用户 PTY、受限工作区文件和历史修改记录已写入独立增补模块。委派协议见 [delegations.md](delegations.md)，资源 DTO、预算、授权和结果状态见 [resources.md](resources.md)。源码和回归定义不等于可安装成品；生成客户端与插件验证已在 CI 完成，增补 1.1.0 通过新发布 tag 重新打包，实际服务器验收仍待用户完成。
 
 ## 终端选择依据
 
