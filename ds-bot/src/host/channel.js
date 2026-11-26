@@ -76,6 +76,7 @@ export function install(rt) {
       const botTasks = rt.taskViewOf?.(state.bots[bot.id]) ?? []
       return {
         ...bot, sessionId: rt.chatOf(bot.id), parts: (segments ?? []).map(segment => segment.sessionId),
+        ...(rt.extraGoalView && bot.extras?.goal ? { extras: { ...bot.extras, goal: rt.extraGoalView(bot) } } : {}),
         ...(botTasks.length > 0 ? { tasks: botTasks } : {}),
         ...(kickoff ? { waiting: true } : {}),
         // `engine` is the Bot's local-agent route, present only on abots.

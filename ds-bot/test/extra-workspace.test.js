@@ -23,6 +23,18 @@ test('目录和文件默认不可读，授权后只读设备无保存回执', as
   await assert.rejects(save(f, root.rootId, 'fake'), { code: 'bot/refused' })
 })
 
+test('只读预览不消耗编辑回执，旧客户端缺标记仍保留原编辑协议', async t => {
+  const f = resourceBench(t)
+  await f.grant({ filesRead: true, filesWrite: true })
+  assert.equal(f.rt.extraView().workspace.readOnlyPreview, true)
+  const root = await open(f)
+  for (let index = 0; index < 40; index += 1) {
+    const preview = await f.call('extra-workspace-read', { rootId: root.rootId, path: 'readme.txt', readOnly: true })
+    assert.equal(preview.receiptId, null); assert.equal(preview.editable, false); assert.equal(preview.text, '原内容\n')
+  }
+  assert.ok((await read(f, root.rootId)).receiptId)
+  await assert.rejects(f.call('extra-workspace-read', { rootId: root.rootId, path: 'readme.txt', readOnly: 'yes' }), { code: 'bot/invalid' })
+})
 test('根句柄隔离设备与授权代次，工作目录和会话变化使旧根失效', async t => {
   const f = resourceBench(t)
   await f.grant({ filesRead: true })

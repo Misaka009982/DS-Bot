@@ -43,6 +43,9 @@ export function install(rt) {
     if (typeof agent.runMaintenance !== 'function' || typeof rt.extraStartFreshPart !== 'function') {
       throw failure('bot/unavailable', '当前宿主不支持安全新建会话。')
     }
+    await rt.extraPauseGoal?.(botId, '用户要求新建干净会话，目标保留并暂停，请核对后恢复。')
+    check()
+    checkIdle(rt, agent)
     if (!await rt.extraStartFreshPart(agent, check)) throw failure('bot/busy', '会话正在切换，请刷新后重试。')
     return { botId, sessionId: rt.chatOf(botId) }
   }

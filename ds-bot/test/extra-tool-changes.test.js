@@ -12,7 +12,12 @@ const result = { type: 'tool/result', seq: 2, data: { message: { toolCallId: 'ed
 function setup(events = [start, call, structuredClone(result)]) {
   let reads = 0
   const rt = { state: { exchangeTurns: {} }, ctx: { get: () => undefined, sessionController: {
-    page: async ({ beforeSeq }) => { reads += 1; return { records: events.filter(event => beforeSeq === undefined || event.seq < beforeSeq).map(event => ({ event })), hasMore: false } },
+    projections: async () => ({ kind: 'sequenced', asOfSeq: events.at(-1)?.seq ?? -1, values: {} }),
+    page: async ({ throughSeq, beforeSeq }) => {
+      assert.ok(Number.isSafeInteger(throughSeq) && throughSeq >= -1, 'throughSeq must be an integer greater than or equal to -1')
+      reads += 1
+      return { records: events.filter(event => event.seq <= throughSeq && (beforeSeq === undefined || event.seq < beforeSeq)).map(event => ({ event })), hasMore: false }
+    },
   } }, selfOf: id => id === 'owned' ? 'bot' : undefined, botOf: () => ({ id: 'bot' }),
   loadSecrets: async () => {}, secretStoreStatus: () => ({ locked: false }), redactSecrets: value => value.replaceAll('fake-private', '[secret:TEST]') }
   install(rt)
@@ -76,6 +81,7 @@ test('同编号的新调用不能替换旧调用的实际修改结果', async ()
   secondResult.seq = 5
   secondResult.data.meta.diffs[0].newText = '下一次修改'
   const f = setup([start, call, structuredClone(result), secondCall, secondResult])
+  assert.deepEqual(toolsFromEvents(f.events, 'owned').map(item => item.callSeq), [1, 4])
   assert.equal((await f.read()).newText, '实际新字')
   assert.equal((await f.read({ callSeq: 4 })).newText, '下一次修改')
 })

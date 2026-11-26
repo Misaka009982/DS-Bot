@@ -10,6 +10,7 @@ const { outputFiles } = await build({
   stdin: {
     contents: [
       "export { ToolCell, TriggerCell, callTree, CellEmpty, Bubbles } from './src/client/cells.js'",
+      "export { nativeToolGroups } from './src/client/extras/tool-groups.js'",
       "export { stackReplies } from './src/shared/group-replies.js'",
       "export { QuestionDock, SettledQuestion } from './src/client/questions.js'",
       "export { SecretDock } from './src/client/secret-card.js'",
@@ -70,7 +71,7 @@ runInNewContext(outputFiles[0].text, {
     throw new Error(`Unexpected platform module ${name}`)
   },
 })
-const { ToolCell, TriggerCell, callTree, stackReplies, CellEmpty, Bubbles, QuestionDock, SettledQuestion, SecretDock, countCards, ViewMenuList, WidgetView, WidgetDock, SettledView, AnsweredView, ClosedView } = module.exports
+const { ToolCell, TriggerCell, callTree, nativeToolGroups, stackReplies, CellEmpty, Bubbles, QuestionDock, SettledQuestion, SecretDock, countCards, ViewMenuList, WidgetView, WidgetDock, SettledView, AnsweredView, ClosedView } = module.exports
 
 // Runs the effects collected since the last render; returns the cleanups.
 const mount = () => {
@@ -234,6 +235,18 @@ const show = (root, options) => {
   return out
 }
 const shown = (root, options) => text(show(root, options))
+
+test('增补原生工具按连续段只渲染一次总数，其余节点保持空标记而不挤正文', () => {
+  const nodes = Array.from({ length: 18 }, (_, index) => ({ key: `tool-${index}`, kind: 'tool-call', anchorSeq: index,
+    location: { kind: 'step', turn: { turn: 1 } }, data: { root: call('read', `read-${index}`) } }))
+  const groups = nativeToolGroups(nodes)
+  const rows = nodes.map(node => expand(ToolCell({ ...props(node.data.root, { roster: team({ extras: { schema: 1 } }) }), node,
+    useExtraToolGroups: select => select(groups) })))
+  assert.equal(count(text(rows), 'Used 18 tools'), 1)
+  assert.equal(count(text(rows), 'Used 1 tools'), 0)
+  assert.equal(rows.slice(1).every(row => find(row, entry => entry.props?.['data-bt-empty'] === true)), true)
+  effects = []
+})
 
 // One finished call of every kind ToolCell draws, and what it shows.
 const BRANCHES = [

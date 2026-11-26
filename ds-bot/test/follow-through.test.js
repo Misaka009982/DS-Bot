@@ -536,6 +536,23 @@ test('a finished turn leaves nothing to pick up', async (t) => {
   assert.equal(second.agentOf('a').calls.length, 0)
 })
 
+test('重启只恢复普通用户工作，不把目标自动回合变成普通恢复提示', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const home = freshHome(t)
+  writeFileSync(join(home, 'inflight.json'), JSON.stringify({ turns: {
+    a: { botId: 'a', since: 1 },
+    b: { botId: 'b', since: 1, trigger: { role: 'private-goal' } },
+  }, queued: {} }))
+  const host = await start(home)
+  const blocks = rt.extraGoalBlocksResume
+  let checked = 0
+  rt.extraGoalBlocksResume = record => { checked += 1; return blocks(record) }
+  t.mock.timers.tick(3000)
+  await settle(() => checked === 2 && host.agentOf('a').calls.length === 1)
+  assert.equal(host.agentOf('a').calls[0].source.role, 'resume')
+  assert.equal(host.agentOf('b').calls.length, 0)
+})
+
 test('a turn DSH stops as it shuts down stays noted; one the user stops does not', async (t) => {
   const home = freshHome(t)
   const host = await start(home)

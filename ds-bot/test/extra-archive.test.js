@@ -22,7 +22,13 @@ function runtime() {
     ctx: {
       get: name => name === 'agents' ? agents : undefined,
       workspaceRegistry: { get archivedSessionIds() { return [...archived] }, archiveSession: async id => { calls.push(id); archived.add(id) } },
-      sessionController: { page: async () => ({ records: [], hasMore: false }) },
+      sessionController: {
+        projections: async () => ({ kind: 'sequenced', asOfSeq: 0, values: {} }),
+        page: async ({ throughSeq }) => {
+          assert.ok(Number.isSafeInteger(throughSeq) && throughSeq >= -1, 'throughSeq must be an integer greater than or equal to -1')
+          return { records: [], hasMore: false }
+        },
+      },
     },
     readOnly: () => undefined, botOf: id => id === 'bot' ? bot : undefined,
     runningJobs: () => [], waitsForApproval: () => false,

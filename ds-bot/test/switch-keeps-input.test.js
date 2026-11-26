@@ -850,6 +850,49 @@ test('主 Bot 的新会话回执明确报告定时交接未完成，不再重复
   assert.equal(host.created.length, 1)
 })
 
+test('私聊目标贯通真实端点、轮次结算、状态投影和停止链路', async t => {
+  const host = await start(); t.after(host.stop)
+  const response = await host.call('extra-goal-control', { botId: 'b', sessionId: 'b', action: 'start', objective: '完成报告', acceptance: '报告已核验' })
+  assert.equal(response.ok, true)
+  const goalId = response.value.id
+  await host.rt.extraGoalTick()
+  const agent = host.agentOf('b')
+  const wakes = () => agent.calls.filter(([kind, message]) => kind === 'followup' && message.source?.role === 'private-goal')
+  assert.equal(wakes().length, 1)
+  host.emit('b', 'turn/start', { turn: 1 })
+  host.emit('b', 'user/message', wakes()[0][1])
+  host.emit('b', 'tool/call', { name: 'read', callId: 'goal-read', arguments: '{}' })
+  host.emit('b', 'assistant/message', { message: { content: [{ type: 'text', text: '完成了第一部分，现在继续。' }] } })
+  host.emit('b', 'turn/end', { turn: 1, reason: { kind: 'completed' } })
+  await Promise.resolve()
+  await host.rt.extraGoalTick()
+  assert.equal(wakes().length, 2)
+  const snapshot = (await host.call('state', {})).value
+  assert.equal(snapshot.extras.privateGoal.schema, 1)
+  const goal = snapshot.bots.find(bot => bot.id === 'b').extras.goal
+  assert.equal(goal.id, goalId); assert.equal(goal.status, 'active')
+  assert.equal(goal.activation, undefined); assert.equal(goal.runId, undefined)
+  assert.equal((await host.call('stop-chat', { botId: 'b' })).value, true)
+  await host.rt.extraGoalTick()
+  assert.equal(wakes().length, 2)
+  assert.equal(host.state().bots.b.extras.goal.status, 'paused')
+  assert.deepEqual(await host.preStep('b', [wakes()[1][1]]), { kind: 'reject' })
+})
+
+test('手动新建私聊时保留目标和证据并暂停，不在新会话自动重放', async t => {
+  const host = await start(); t.after(host.stop)
+  const response = await host.call('extra-goal-control', { botId: 'b', sessionId: 'b', action: 'start', objective: '完成报告', acceptance: '报告已核验' })
+  assert.equal(response.ok, true)
+  const initial = response.value
+  await host.tool('bot_goal', { action: 'progress', goal_id: initial.id, revision: initial.revision, progress: '第一部分完成', evidence: '第一部分.md' }, 'b')
+  const fresh = await host.call('extra-new-session', { botId: 'b', sessionId: 'b' })
+  assert.equal(fresh.ok, true)
+  await host.rt.extraGoalTick()
+  const goal = host.state().bots.b.extras.goal
+  assert.equal(goal.id, initial.id); assert.equal(goal.status, 'paused'); assert.equal(goal.evidence, '第一部分.md')
+  assert.equal(host.agentOf(fresh.value.sessionId).calls.some(([, message]) => message?.source?.role === 'private-goal'), false)
+})
+
 test('a configured small output limit is an ordinary cutoff, including reasoning-only output', async t => {
   const host = await start({ services: cutOffServices })
   t.after(host.stop)

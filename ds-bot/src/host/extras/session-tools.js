@@ -118,6 +118,7 @@ export function install(rt) {
         const before = queued(agent)
         if (before.length > 0 && args.discard_queued !== true) throw failure('bot/busy', '目标有排队输入，未暂停也未丢弃；只有明确允许时才传 discard_queued=true。')
         paused.delete(target.id)
+        void rt.extraPauseGoal?.(target.id, '主 Bot 已暂停当前私聊，请核对后手动恢复目标。')
         const live = rt.live.get(sessionId)
         if (agent.status !== 'idle' || live?.turn !== undefined || live?.pending !== undefined || before.length > 0) {
           // 检查队列后在同一同步链调用 cancel，不在其间让另一条输入先进入队列。

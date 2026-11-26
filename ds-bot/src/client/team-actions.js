@@ -175,6 +175,7 @@ export function teamActions({ call, after, partFor, roster, ui, live, cards, hel
     extraSetBot: (id, patch) => after(call('extra-bot-set', { id, ...patch })),
     extraSetDefaults: patch => after(call('extra-defaults-set', patch)),
     extraNewSession: (botId, sessionId) => after(call('extra-new-session', { botId, sessionId })),
+    extraGoalControl: body => after(call('extra-goal-control', body)),
     extraPhoneSet: body => after(call('phone-extra-set', body)),
     extraUserTerminals: () => call('extra-terminal-list', { owned: true }),
     extraCloseTerminal: handleId => call('extra-terminal-close', { handleId }),

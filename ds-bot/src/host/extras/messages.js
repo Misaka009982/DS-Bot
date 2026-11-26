@@ -24,6 +24,15 @@ export function diagnosticItem(event, fullMessages, mask = text => text) {
     ...(Number.isSafeInteger(event.seq) ? { seq: event.seq } : {}), ...(Number.isInteger(event.data?.turn) ? { turn: event.data.turn } : {}), time: event.time }
 }
 
+const validId = value => typeof value === 'string' && value.length > 0 && value.length <= 200 && !/[\s\p{Cc}]/u.test(value)
+export function exchangeSource(rt, source, sessionId) {
+  if (!validId(source?.senderSessionId) || !validId(source?.exchangeId)) return undefined
+  const from = rt.botOf(source.senderSessionId); const to = rt.botOf(rt.selfOf(sessionId))
+  if (!from || !to || from.id !== source.senderSessionId || from.id === to.id || from.private === true || to.private === true) return undefined
+  const entry = rt.exchangeOf?.(source.exchangeId, from.id, to.id)
+  if (!entry || entry.id !== source.exchangeId || entry.from !== from.id || entry.to !== to.id || entry.audience === 'user') return undefined
+  return { schema: 1, id: entry.id, from: from.id, to: to.id }
+}
 export function projectMessages(items, events, sessionId, options = {}) {
   const mask = text => redactText(text, options.mask)
   if (options.fullMessages === true) {
@@ -39,8 +48,9 @@ export function projectMessages(items, events, sessionId, options = {}) {
       if (event.type !== 'user/message' || source?.kind !== SOURCE_KIND || !INTERNAL.has(source.role)) continue
       const text = mask(bodyText(event))
       if (text.trim() === '') continue
+      const exchange = options.exchange?.(source, sessionId)
       const row = { kind: 'internal', sessionId, text, name: mask(source.senderName ?? 'Bot'), role: source.role, title: '内部协作消息', time: event.time,
-        ...(Number.isSafeInteger(event.seq) ? { seq: event.seq } : {}) }
+        ...(exchange ? { exchange } : {}), ...(Number.isSafeInteger(event.seq) ? { seq: event.seq } : {}) }
       const at = items.findIndex(item => item.seq === event.seq && item.kind === 'event')
       if (at >= 0) items.splice(at, 1, row)
       else if (!items.some(item => item.seq === event.seq && item.kind === 'internal')) items.push(row)
@@ -70,7 +80,7 @@ export function install(rt) {
   }
   rt.extraProjectMessages = (items, events, sessionId, options) => projectMessages(items, events, sessionId, {
     ...options, hiddenTurns: rt.state.exchangeTurns?.[sessionId] ?? [], name: rt.botOf(rt.selfOf(sessionId))?.name,
-    mask: rt.redactSecrets,
+    mask: rt.redactSecrets, exchange: (source, id) => exchangeSource(rt, source, id),
   })
   rt.extraMessages = async (body, signal, options) => {
     await rt.loadSecrets()

@@ -68,6 +68,18 @@ test('a bare /goal in a group chat opens the group goal, and a Bot chat is left 
   assert.deepEqual(calls, [['goal', 'r1']])
 })
 
+test('支持私聊目标的服务器在 bare /goal 打开 Bot 目标面板，群入口保持原行为', () => {
+  calls.length = 0
+  const original = rosterOf().getSnapshot()
+  const roster = { getSnapshot: () => ({ ...original, extras: { privateGoal: { schema: 1 } } }) }
+  const [goal] = commandEntries({ roster, actions }).decorations
+  assert.equal(goal.available({ sessionId: 'a' }), true)
+  assert.equal(goal.available({ sessionId: 'plain-dsh-agent' }), false)
+  goal.ui.run({ sessionId: 'a' })
+  goal.ui.run({ sessionId: 'r1' })
+  assert.deepEqual(calls, [['settings', 'bots', 'a'], ['goal', 'r1']])
+})
+
 test('the install registers one contribution and one decoration with the command surface', () => {
   const registrations = []
   const ctx = {

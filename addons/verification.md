@@ -2,13 +2,47 @@
 
 ## 已做／未做
 
-本次后续补丁在本机只进行 JavaScript 语法、手机增补 TSX 结构、UTF-8／JSON、接入点和代码路径静态核对。没有在本机运行插件、模型、Relay、手机、安装、测试、编译或打包；`client.js`／`link.js` 由 CI 生成。用户已授权推送 `main`、通过 CI 构建并发布增补 1.1.0 Release，随后安装实际操作验收；构建与发布结果以对应提交的 Actions 和 Release 附件记录为准。不执行 npm publish。已有发布的验证结果不能代替本次补丁验收。
+本次后续补丁在本机只进行 JavaScript 语法、手机增补 TSX 结构、UTF-8／JSON、接入点和代码路径静态核对。没有在本机运行插件、模型、Relay、手机、安装、测试、编译或打包；`client.js`／`link.js` 由 CI 生成。用户已授权继续收尾，通过 `main` CI 验证、生成客户端并发布增补 1.2.0 Release，随后安装实际操作验收；构建与发布结果以对应提交的 Actions 和 Release 附件记录为准。不执行 npm publish。已有发布的验证结果不能代替本次补丁验收。
 
 专用多代理／跨模型审查在当前工具环境不可用，采用人工式逐路径静态复核；不是独立审查通过证明。TypeScript 严格类型及 GUI 验收由用户／CI 完成。
 
 本次委派、团队默认值与资源模块采用逐文件 `node --check` 的 JavaScript 解析、严格 UTF-8 解码、manifest JSON 与 30 个接入文件的唯一锚点核对，以及 `git diff --check`。这些检查不执行测试文件中的用例。资源端点、预算和错误语义见 [resources.md](resources.md)，实际宿主与文件强隔离门禁见 [resource-audit.md](resource-audit.md)，尚未完成实机验收。
 
-源码修复提交 `b64637df` 已通过增补构建 [45807525998](https://github.com/Misaka009982/DS-Bot/actions/runs/45807525998) 的原版／增补独立验证与打包；综合构建 [45807460892](https://github.com/Misaka009982/DS-Bot/actions/runs/45807460892) 的泄漏扫描、Linux Node 22／24、Windows Node 24、lint／浏览器、手机类型／单元、link／Relay、桌面和 Docker 作业均已通过。iOS 模拟器作业被取消，不计为通过。本次发布准备仅在 `b64637df` 之上更新清单与说明，发布工作流仍对 1.1.0 的新 tag 重新验证及打包。
+源码修复提交 `b64637df` 已通过增补构建 [45807525998](https://github.com/Misaka009982/DS-Bot/actions/runs/45807525998) 的原版／增补独立验证与打包；综合构建 [45807460892](https://github.com/Misaka009982/DS-Bot/actions/runs/45807460892) 的泄漏扫描、Linux Node 22／24、Windows Node 24、lint／浏览器、手机类型／单元、link／Relay、桌面和 Docker 作业均已通过。iOS 模拟器作业被取消，不计为通过。历史 1.1.0 发布源码为 `281a7b4f`，其发布验证及打包见 [45810998531](https://github.com/Misaka009982/DS-Bot/actions/runs/45810998531)。本次 1.2.0 包含下面列出的行为修改，必须使用新提交的 CI 结果，不能沿用旧版成功记录。
+
+## 私聊目标模式（1.2.0）
+
+本次新增独立私聊目标，不解除原生 DSH Goal 的拦截。目标跟随 Bot 保存，普通阶段汇报后的正常轮次结束不再直接放弃目标。入口、状态、停止／换段／重启和证据边界见 [private-goal.md](private-goal.md)。已发布 1.1.0 附件不含此改动，需要新的 CI 验证与安装包。
+
+新增回归定义覆盖：目标默认未开启、私聊续跑与完成证据、非私聊拒绝、授权和 revision、暂停后旧消息、待处理工作门禁、三轮无进展阻塞、正常换段与重启暂停、保存失败和 UI 重复点击／错误保留。现有安装顺序、裸 `/goal` 入口和增补前台保留测试一并核对。接入清单增加 `host/tools.js`、`host/resume.js` 和 `client/command-actions.js`，当前共 33 个文件。
+
+本机仍只做静态验证，新增测试定义尚未运行；不能把上文 1.1.0 的 CI 成功用于证明本次目标功能通过。
+
+## Deck 资源接线与恢复归属（1.2.0 服务端补丁）
+
+用户先前授权对资源缺陷、调用关联／说明、协作来源和恢复归属做定点修改；本轮继续收尾，将这些已完成源码与私聊目标一起提交验证。Deck 源码与安装包独立交付；本节只记录 DS-Bot 服务端变更，实机结果仍待确认。
+
+- `extra-observability.test.js` 增加同 callId 的两次 callSeq、不同结果、分页、重复事件、隐藏调用边界、脱敏短说明及账本可验证的交换来源；`extra-tool-changes.test.js` 保留两次真实修改读取，并核对列表不丢记录。
+- `extra-workspace.test.js` 新增 40 次只读预览后仍能领取编辑回执、可选标志严格校验与旧客户端兼容；原版本／内容竞争和单次写入断言保持。
+- `extra-terminals.test.js` 新增输出结束但 `done` 尚未结算的关闭路径，必须等待真实退出码；保留尾部字节与未知结果保护。
+- `diagnostics.test.js` 保留阻塞错误与凭据清理断言，新增同来源成功的恢复序号、不同路由／会话、旧完成重放和无归属旧记录的保护。`host/turns.js` 的新锚点已登记，`bot.recovery` 仅记录失败／完成的白名单编号和时间，不记录正文。
+- 本机只做语法、UTF-8／JSON、引用／锚点及差异静态复核；新增回归未运行。真实模型重试需提供同一故障从失败、重试、正常完成到保存及 state 的关联；此次修复不等于原红灯实例根因确认。
+
+## 工具记录格式（1.2.0）
+
+按用户两张原生 Agents 参考图修正插件工具记录：连续工具默认只显示一条“用了 N 个工具”；展开总数才列出“读取 · 路径／运行命令 · 真实说明”，再展开单项直接显示参数／命令与输出、复制和分页。新调用只更新总数，不自动展开。契约、公共接口依据和实机检查见 [tool-display.md](tool-display.md)。此补丁不在 1.1.0 发布附件中。
+
+`extra-tool-groups.test.js` 定义 18 次调用合并、消息／卡片边界、隐藏思考、逐节点结果更新、历史补页摘要位置、无编号／重复编号调用和真实标题规则；`tool-cells.test.js` 穿过 ToolCell 核对只渲染一个总数。`extra-tools-ui.test.js` 保留分页／digest／128 Ki／授权／取消保护，并改为三层挂载、默认折叠、标题列表与正文请求分离、原命令复制。`extra-observability.test.js` 增补路径脱敏、密钥库锁定与先脱敏再截断。
+
+本机仅做语法、UTF-8／JSON、接入锚点与差异静态核对；未运行测试、构建或 GUI，未修改生成客户端。
+
+## 历史分页 throughSeq 兼容修复（1.2.0）
+
+用户在增补 1.1.0 展开工具详情时收到 `throughSeq must be an integer greater than or equal to -1`。已对照公开 `@deepseek-ai/dsh-api-session-controller`：`0.2.1-rc.5` 的 `SessionPageRequest.throughSeq` 必填，`validatePageRequest` 对省略值直接返回该错误；固定 harness 的 `0.2.2-rc.1` 才接受省略并选取观察到的日志末尾。1.1.0 的 `extras/log-page.js` 省略此字段，原测试模拟也未检查，不能用新宿主 CI 成功证明旧宿主兼容。
+
+修复在 `extras/log-page.js` 的 `historyThroughSeq`：只取已加载 Agent 的合法 `session.seq - 1`，否则读取公开、非激活的 `sessionController.projections` 的 `sequenced/asOfSeq`。每次工具查找、轮次回溯和待办扫描固定截止点；空日志必须确认为 `-1`，缺失／迁移／非法序号明确失败，不用最大整数或任意 `-1` 冒充真实截止点。归档前最近活动读取同步补齐该字段。没有更改请求权限、DSH 安装、用户历史或生成客户端。
+
+`extra-log-page.test.js` 定义严格旧契约、热／冷会话、非法／迁移投影、序号 0、空日志、分页期间新增事件、轮次回溯、取消与任务下界；现有工具详情、真实 diff 与归档测试模拟同步强制检查 throughSeq。本机只通过语法／编码与差异静态检查，测试交由新版 CI 执行；旧 1.1.0 附件仍含此兼容缺陷，升级需安装 1.2.0 新包。以上确认的是具体接口差异，不推定用户实际安装的宿主精确版本。
 
 ## 自动检查
 

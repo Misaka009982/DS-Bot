@@ -16,6 +16,7 @@ import { SPRING_SHAPE, SPRING_TAP, spring, useGlide, useLinger } from './motion.
 import { t } from './i18n.js'
 import { BotExtras } from './extras/settings.js'
 import { NewSessionRow } from './extras/new-session.js'
+import { PrivateGoal } from './extras/private-goal.js'
 
 const capitalize = word => word[0].toUpperCase() + word.slice(1)
 
@@ -284,6 +285,7 @@ export function BotSettingsForm({ bot, roster, actions, run }) {
     isTile ? null : h(Card, { title: t('Sidebar') },
       h(SwitchRow, { label: t('Pin'), hint: t('Kept above the other chats.'), on: bot.pinned === true, onChange: pinned => run(actions.setFlags(bot.id, { pinned })) }),
       isMainBot ? null : h(SwitchRow, { label: t('Hide from sidebar'), hint: t('Search still finds it.'), on: bot.hidden === true, onChange: hidden => run(actions.setFlags(bot.id, { hidden })) })),
+    h(PrivateGoal, { key: bot.id, bot, roster, actions, run, Card }),
     h(Card, { title: t('Manage') },
       h(NewSessionRow, { key: bot.id, bot, roster, actions, run }),
       bot.private === true ? null : h('button', { type: 'button', className: 'bt-set-row bt-bs-row', onClick: duplicate },

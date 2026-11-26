@@ -164,6 +164,11 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'effect ds-bot: 增补委派读取',
     'effect ds-bot: 增补工作区资源',
     'effect ds-bot: 增补服务器终端',
+    'on session/event',
+    'on workspace/session-stop',
+    'effect ds-bot: 私聊目标提示',
+    'prompt bot-private-goal 650',
+    'effect ds-bot: 私聊目标续跑',
   ])
 })
 
@@ -250,7 +255,7 @@ const TEAM = {
 test('Desktop 的 read_browser 保持原工具顺序，增补工具随后追加，仍通过窗口读取', async (t) => {
   const { ctx, call, stop } = start(TEAM, { services: { profileContext: { name: 'desktop' } } })
   t.after(stop)
-  assert.deepEqual(rt.teamTools.slice(-3).map(tool => tool.name), ['read_browser', 'pause_bot', 'new_bot_session'])
+  assert.deepEqual(rt.teamTools.slice(-4).map(tool => tool.name), ['read_browser', 'pause_bot', 'new_bot_session', 'bot_goal'])
   assert.ok(ctx.calls.indexOf('effect ds-bot: browser channel') < ctx.calls.indexOf('effect ds-bot: api route'))
   const read = args => rt.teamTools.find(d => d.name === 'read_browser').execute(args, { agent: { id: 'b2' } })
 

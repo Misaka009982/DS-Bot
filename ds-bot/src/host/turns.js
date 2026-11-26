@@ -534,6 +534,8 @@ export function install(rt) {
     await rt.load()
     const running = (rt.agentById?.(agentId)?.sessions ?? []).filter(id => live.get(id)?.turn !== undefined)
     for (const sessionId of running) {
+      const botId = rt.selfOf(sessionId)
+      if (botId !== undefined && rt.chatOf(botId) === sessionId) void rt.extraPauseGoal?.(botId)
       const agent = await rt.resolveAgent(sessionId).catch(() => undefined)
       agent?.cancel?.({ kind: 'user' })
     }
@@ -546,9 +548,10 @@ export function install(rt) {
     await rt.load()
     const sessionId = rt.chatOf(botId)
     if (sessionId === undefined) return false
+    const goalPause = rt.extraPauseGoal?.(botId)
     const turnRunning = live.get(sessionId)?.turn !== undefined
     const subRunning = hasSubagents?.(sessionId) === true
-    if (!turnRunning && !subRunning) return false
+    if (!turnRunning && !subRunning) return await goalPause === true
     await stopSubagents(sessionId)
     if (turnRunning) {
       const agent = await rt.resolveAgent(sessionId).catch(() => undefined)
@@ -896,9 +899,10 @@ export function install(rt) {
     }
     void rt.save().catch(() => {})
   }
-  const forgetFailure = (id) => {
+  const forgetFailure = (id, turn, watched) => {
     const bot = rt.botOf(rt.selfOf(id))
-    if (bot?.failures?.[id] === undefined) return
+    const failure = bot?.failures?.[id]
+    if (!failure || !watched || !Number.isSafeInteger(turn) || !Number.isSafeInteger(failure.turn) || turn < failure.turn) return
     delete bot.failures[id]
     if (Object.keys(bot.failures).length === 0) delete bot.failures
     void rt.save().catch(() => {})
@@ -931,12 +935,9 @@ export function install(rt) {
     })
   }
 
-  // The facts of a blocking failure stay on its Bot, from any of its Sessions, until a
-  // turn of it completes, a change that can fix it (unblockBots), or its model changes
-  // (roster.js). Never the message: a provider may echo part of the key. The provider
-  // is the failing route's, which is the Session's last request, else the model the
-  // Bot runs on.
-  const blockBot = (id, session, failure) => {
+  // 新阻塞记录会话和事件来源，只有同一来源的后续成功才能证明恢复。
+  // 密钥、登录或模型的显式变更仍沿用原有清理入口；不记录错误正文。
+  const blockBot = (id, session, failure, turn, seq) => {
     const bot = rt.botOf(rt.selfOf(id))
     if (bot === undefined || !BLOCKING_CODES.has(failure.code)) return false
     const provider = session?.requestHeader?.()?.config?.provider ?? splitRef(bot.appliedModel)?.provider
@@ -945,14 +946,19 @@ export function install(rt) {
       ...(failure.status === undefined ? {} : { status: failure.status }),
       ...(failure.requestId === undefined ? {} : { requestId: failure.requestId }),
       ...(provider ? { provider } : {}),
-      at: Date.now(),
+      at: Date.now(), sessionId: id,
+      ...(Number.isSafeInteger(turn) ? { turn } : {}), ...(Number.isSafeInteger(seq) ? { seq } : {}),
     }
     void rt.save().catch(() => {})
     return true
   }
-  const unblockBot = (botId) => {
-    const bot = rt.botOf(botId)
-    if (bot?.blocked === undefined) return
+  const unblockBot = (botId, id, session, turn, seq, watched) => {
+    const bot = rt.botOf(botId); const blocked = bot?.blocked
+    const provider = session?.requestHeader?.()?.config?.provider ?? splitRef(bot?.appliedModel)?.provider
+    if (!blocked || !watched || blocked.sessionId !== id || !Number.isSafeInteger(blocked.turn) || !Number.isSafeInteger(blocked.seq)
+      || !Number.isSafeInteger(turn) || turn < blocked.turn || !Number.isSafeInteger(seq) || seq <= blocked.seq
+      || blocked.provider !== undefined && provider !== blocked.provider) return
+    bot.recovery = { schema: 1, sessionId: id, failedTurn: blocked.turn, failedSeq: blocked.seq, completedTurn: turn, completedSeq: seq, at: Date.now() }
     delete bot.blocked
     void rt.save().catch(() => {})
   }
@@ -1433,11 +1439,11 @@ export function install(rt) {
         if (cutOff) noteCutOffTurn(id, { session, wroteNothing, ...(premature ? { outputTokens } : {}) })
         if (failure !== undefined) {
           if (watched) rememberFailure(id, turn, failure, session)
-          if (blockBot(id, session, failure) && owner !== undefined && info?.role === 'kickoff') rt.holdKickoffAgain(owner)
+          if (blockBot(id, session, failure, turn ?? event.data?.turn, event.seq) && owner !== undefined && info?.role === 'kickoff') rt.holdKickoffAgain(owner)
           if (groupOwner !== undefined) rt.blockTasks?.(groupOwner.roomId, groupOwner.botId, { cause: 'failed', code: failure.code, ...(failure.status ? { status: failure.status } : {}) })
         } else if (reason?.kind === 'completed') {
-          forgetFailure(id)
-          unblockBot(rt.selfOf(id))
+          forgetFailure(id, turn, watched)
+          unblockBot(rt.selfOf(id), id, session, turn, event.seq, watched)
           // A turn picked up after a restart that did not touch its tasks leaves them in doubt.
           if (groupOwner !== undefined && info?.resumed === true) rt.blockTasks?.(groupOwner.roomId, groupOwner.botId, { cause: 'restarted' }, since)
           else if (groupOwner !== undefined) rt.unblockTasks?.(groupOwner.roomId, groupOwner.botId)
@@ -1562,6 +1568,7 @@ export function install(rt) {
         // A retry keeps the line it just showed, so its own final can still fold into it.
         if (!echoed && !retry) rt.dropRoomStepEcho?.(id)
         if (rt.groupOwners.has(id)) void rt.goalSettled?.(rt.roomOf(rt.groupOwners.get(id).roomId)).catch(error => rt.warn('ds-bot: goal settle in %s failed: %s', id, error))
+        rt.extraGoalTurnEnded?.(id, { watched, turn, reason, toolCount, retry })
         break
       }
     }

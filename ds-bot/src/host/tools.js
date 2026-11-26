@@ -430,6 +430,7 @@ export function install(rt) {
       const { running } = activeSessions(target.id)
       const activeTasks = (target.tasks ?? []).filter(task => task && ['running', 'waiting_work', 'waiting_approval'].includes(task.status))
       if (running.length === 0 && activeTasks.length === 0) refuse(`${target.name} is not running right now, so there is nothing to stop. Use message_bot to reach it.`)
+      void rt.extraPauseGoal?.(target.id, '主 Bot 已叫停工作，请核对后手动恢复目标。')
       // Separate non-task sessions before stopping tasks (stopping clears taskOwners).
       const nonTaskRunning = running.filter(sessionId => !rt.taskOwners?.has(sessionId))
       const places = nonTaskRunning.map(whereOf)

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { displayText, redactText } from '../../shared/extras/redact.js'
+import { toolPresentation } from '../../shared/extras/tool-display.js'
 import { hiddenTurn, logPage, ownedSession, SCAN_PAGES, turnAt } from './log-page.js'
 
 const SKIP = new Set(['ask_user', 'request_secret', 'group_relay'])
@@ -24,22 +25,33 @@ export function toolsFromEvents(events, sessionId, { seedTurn, hidden = [], labe
   let turn = seedTurn
   const calls = []
   const results = new Map()
-  const ids = new Set()
+  const active = new Map()
+  const seen = new Set()
   for (const event of events) {
+    if (Number.isSafeInteger(event.seq)) {
+      if (seen.has(event.seq)) continue
+      seen.add(event.seq)
+    }
     if (event.type === 'turn/start' && Number.isInteger(event.data?.turn)) turn = event.data.turn
     const result = resultOf(event)
-    if (result?.callId !== undefined) results.set(result.callId, result.message)
+    const matched = result?.callId === undefined ? undefined : active.get(result.callId)
+    if (matched !== undefined) results.set(matched, result.message)
     const call = callOf(event)
-    if (call === undefined || typeof call.name !== 'string' || SKIP.has(call.name)) continue
+    if (call === undefined) continue
+    // 任何新调用都是结果关联边界，包括被隐藏或不展示的调用。
+    if (typeof call.callId === 'string') active.delete(call.callId)
+    if (typeof call.name !== 'string' || SKIP.has(call.name)) continue
     const callTurn = Number.isInteger(event.data?.turn) ? event.data.turn : turn
-    if (hidden.includes(callTurn) || hidden.length > 0 && callTurn === undefined || ids.has(call.callId ?? event.seq)) continue
-    ids.add(call.callId ?? event.seq)
+    if (hidden.includes(callTurn) || hidden.length > 0 && callTurn === undefined) continue
+    if (typeof call.callId === 'string') active.set(call.callId, calls.length)
+    const { description, filePath } = toolPresentation(call.name, call.args)
     calls.push({ sessionId, callId: typeof call.callId === 'string' ? call.callId : null,
       callSeq: Number.isSafeInteger(event.seq) ? event.seq : null, name: call.name, label: labelFor(call.name) ?? null,
+      ...(description ? { description } : {}), ...(filePath ? { filePath } : {}),
       ...(Number.isInteger(callTurn) ? { turn: callTurn } : {}), ...(typeof call.parentCallId === 'string' ? { parentCallId: call.parentCallId } : {}) })
   }
-  return calls.map(call => {
-    const message = results.get(call.callId)
+  return calls.map((call, index) => {
+    const message = results.get(index)
     const status = statusOf(message)
     return { ...call, ...(status === 'unconfirmed' ? {} : { ok: status === 'success' }), status }
   })
@@ -90,6 +102,13 @@ function outputOf(message) {
 
 export function install(rt) {
   const mask = text => redactText(text, rt.redactSecrets)
+  const summarize = tool => {
+    const { description, filePath, ...value } = tool
+    const describe = typeof rt.redactSecrets === 'function' && rt.secretStoreStatus?.()?.locked === false
+    return { ...value, name: mask(tool.name), label: tool.label == null ? null : mask(tool.label),
+      ...(describe && description ? { description: mask(description).replace(/\s+/g, ' ').slice(0, 320) } : {}),
+      ...(describe && filePath ? { filePath: mask(filePath).slice(0, 1024) } : {}) }
+  }
   rt.extraStepsItems = (events, sessionId, options = {}) => {
     const hidden = options.includeHidden === true ? [] : rt.state.exchangeTurns?.[sessionId] ?? []
     const tools = toolsFromEvents(events, sessionId, { ...options, hidden })
@@ -97,16 +116,17 @@ export function install(rt) {
     for (const tool of tools) {
       if (!Number.isInteger(tool.turn)) continue
       const list = byTurn.get(tool.turn) ?? byTurn.set(tool.turn, []).get(tool.turn)
-      list.push({ ...tool, name: mask(tool.name), label: tool.label === null ? null : mask(tool.label) })
+      list.push(summarize(tool))
     }
     return byTurn
   }
   rt.extraToolList = async (body, signal, options) => {
+    await rt.loadSecrets()
     const scope = ownedSession(rt, body, options)
     const page = await logPage(rt, scope, body.beforeSeq, signal)
     const seedTurn = Number.isSafeInteger(page.events[0]?.seq) ? await turnAt(rt, scope, page.events[0].seq, signal) : undefined
     const tools = toolsFromEvents(page.events, scope.id, { seedTurn, hidden: scope.includeHidden ? [] : rt.state.exchangeTurns?.[scope.id] ?? [] })
-    return { items: tools.map(tool => ({ ...tool, name: mask(tool.name) })), cursor: page.beforeSeq === null ? null : { beforeSeq: page.beforeSeq } }
+    return { items: tools.map(summarize), cursor: page.beforeSeq === null ? null : { beforeSeq: page.beforeSeq } }
   }
   let reading = 0
   rt.extraToolDetail = async (body, signal, options) => {

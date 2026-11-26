@@ -82,6 +82,8 @@ export function install(rt) {
     entry.status = 'closing'
     const pending = Promise.resolve().then(() => entry.process.terminate()).then(async () => {
       await entry.pump
+      // 输出排空与进程结果独立结算，关闭回执必须包含最终退出事实。
+      await entry.done
       entry.status = 'closed'
       entry.closedAt = Date.now()
       entry.process = undefined

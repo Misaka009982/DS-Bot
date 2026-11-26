@@ -12,7 +12,7 @@ export function install(rt) {
   const hasDefault = () => MODES.has(rt.state?.extras?.defaults?.messageMode)
   const isUserPrompt = request => request?.sessionId !== undefined && isOwnChat(request.sessionId)
     && (request.source?.kind === undefined || request.source.kind === 'user')
-  rt.extraKeepForeground = (id, requested) => hasMode(botFor(id)) || isOwnChat(id) && hasDefault() || MODES.has(requested)
+  rt.extraKeepForeground = (id, requested) => rt.extraHasActiveGoal?.(id) === true || hasMode(botFor(id)) || isOwnChat(id) && hasDefault() || MODES.has(requested)
     || scope.getStore()?.sessionId === id && MODES.has(scope.getStore()?.mode)
   rt.extraSendPrompt = (request, send) => {
     if (!isUserPrompt(request)) return send(request)

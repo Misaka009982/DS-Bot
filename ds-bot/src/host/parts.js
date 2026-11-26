@@ -1476,6 +1476,7 @@ export function install(rt) {
   // part), and the backend's own pre-step listener sees the wrapper.
   ctx.on('agent/pre-step', async (payload, next) => {
     await rt.load()
+    if (rt.extraGoalRejectStep?.(payload)) return { kind: 'reject' }
     const { agent } = payload
     if (payload.step === 1 && rt.consumeEmptyTaskWake?.(agent.id) && (payload.messages?.length ?? 0) === 0) {
       return { kind: 'reject' }

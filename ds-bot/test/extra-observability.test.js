@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { diagnosticItem, projectMessages } from '../src/host/extras/messages.js'
+import { diagnosticItem, exchangeSource, projectMessages } from '../src/host/extras/messages.js'
 import { latestTodo, todoItems } from '../src/host/extras/todos.js'
 import { displayText, redactText, redactValue } from '../src/shared/extras/redact.js'
 import { install as installTools, toolsFromEvents } from '../src/host/extras/tools.js'
@@ -12,11 +12,15 @@ const result = (seq, id, ok, text) => ({ type: 'tool/result', seq, time: seq, da
 function toolsRuntime(events, hidden = []) {
   const rt = {
     state: { exchangeTurns: { owned: hidden } },
-    ctx: { get: () => undefined, sessionController: { page: async ({ address, beforeSeq, maxMessages }) => {
-      assert.equal(address.sessionId, 'owned')
-      const all = events.filter(event => beforeSeq === undefined || event.seq < beforeSeq)
-      return { records: all.slice(-maxMessages).map(event => ({ event })), hasMore: all.length > maxMessages }
-    } } },
+    ctx: { get: () => undefined, sessionController: {
+      projections: async ({ sessionId }) => { assert.equal(sessionId, 'owned'); return { kind: 'sequenced', asOfSeq: events.at(-1)?.seq ?? -1, values: {} } },
+      page: async ({ address, throughSeq, beforeSeq, maxMessages }) => {
+        assert.equal(address.sessionId, 'owned')
+        assert.ok(Number.isSafeInteger(throughSeq) && throughSeq >= -1, 'throughSeq must be an integer greater than or equal to -1')
+        const all = events.filter(event => event.seq <= throughSeq && (beforeSeq === undefined || event.seq < beforeSeq))
+        return { records: all.slice(-maxMessages).map(event => ({ event })), hasMore: all.length > maxMessages }
+      },
+    } },
     selfOf: id => id === 'owned' ? 'bot' : undefined,
     botOf: id => id === 'bot' ? { id: 'bot' } : undefined,
     groupOwners: new Map(), roomOwners: new Map(), pastOwners: new Map(),
@@ -26,6 +30,27 @@ function toolsRuntime(events, hidden = []) {
   return rt
 }
 
+test('内部协作跳转只取原交换账本，不按显示名称或会话编号猜来源', () => {
+  const bots = { a: { id: 'a' }, b: { id: 'b' } }
+  const exchange = { id: 'exchange-a', from: 'a', to: 'b' }
+  const rt = { botOf: id => bots[id], selfOf: id => id === 'part-b' ? 'b' : undefined, exchangeOf: id => id === exchange.id ? exchange : undefined }
+  const source = { senderSessionId: 'a', senderName: '同名', exchangeId: 'exchange-a' }
+  assert.deepEqual(exchangeSource(rt, source, 'part-b'), { schema: 1, id: 'exchange-a', from: 'a', to: 'b' })
+  assert.equal(exchangeSource(rt, { ...source, exchangeId: 'missing' }, 'part-b'), undefined)
+  assert.equal(exchangeSource(rt, { ...source, senderSessionId: 'part-a' }, 'part-b'), undefined)
+  bots.a.private = true
+  assert.equal(exchangeSource(rt, source, 'part-b'), undefined)
+  bots.a.private = false; exchange.to = 'outside'
+  assert.equal(exchangeSource(rt, source, 'part-b'), undefined)
+})
+test('完整消息才投影已核对的交换关联，缺来源不会补造编号', () => {
+  const event = { type: 'user/message', seq: 1, time: 1, data: { source: { kind: 'bot', role: 'request' }, content: [{ type: 'text', text: '原消息' }] } }
+  const association = { schema: 1, id: 'exchange-a', from: 'a', to: 'b' }
+  const projected = projectMessages([], [event], 'part-b', { fullMessages: true, exchange: () => association })
+  assert.deepEqual(projected[0].exchange, association)
+  assert.deepEqual(projectMessages([], [event], 'part-b', { fullMessages: false, exchange: () => association }), [])
+  assert.equal(projectMessages([], [event], 'part-b', { fullMessages: true })[0].exchange, undefined)
+})
 test('工具名与结果分开记录，未知结果不是成功，PTC 子调用不遗漏', () => {
   const tools = toolsFromEvents([start, call(2, 'c', 'read_file', '{}'), call(3, 'x', 'unknown', '{}'), result(4, 'c', false, 'failed'),
     { type: 'tool/ptc-dispatch-start', seq: 5, data: { callId: 'program', subCallId: 'child', name: 'bash', arguments: { command: 'pwd' } } }], 'owned')
@@ -34,6 +59,40 @@ test('工具名与结果分开记录，未知结果不是成功，PTC 子调用�
   assert.equal(tools[1].status, 'unconfirmed')
   assert.equal(tools[2].callId, 'child')
   assert.equal(toolsFromEvents([start, call(2, 'hidden', 'bash', '{}')], 'owned', { hidden: [1] }).length, 0)
+})
+
+test('工具列表按调用序号隔离复用编号，重复事件不增数且隐藏调用截断结果关联', () => {
+  const first = call(2, 'same', 'edit', '{}'); const second = call(5, 'same', 'edit', '{}')
+  const rows = [start, first, result(3, 'same', false, '失败'), second, result(6, 'same', true, '成功')]
+  assert.deepEqual(toolsFromEvents(rows, 'owned').map(item => [item.callSeq, item.status]), [[2, 'failed'], [5, 'success']])
+  assert.deepEqual(toolsFromEvents([...rows, first], 'owned').map(item => item.callSeq), [2, 5])
+  assert.deepEqual(toolsFromEvents(rows.slice(0, 3), 'owned').map(item => item.status), ['failed'])
+  assert.deepEqual(toolsFromEvents(rows.slice(3), 'owned', { seedTurn: 2 }).map(item => item.status), ['success'])
+  const hidden = [start, first, { type: 'turn/start', seq: 4, data: { turn: 2 } }, second, result(6, 'same', true, '隐藏结果')]
+  assert.deepEqual(toolsFromEvents(hidden, 'owned', { hidden: [2] }).map(item => item.status), ['unconfirmed'])
+})
+test('工具短说明只取真实参数且在列表投影中脱敏，不编造工具目的', async () => {
+  const rt = toolsRuntime([start, call(2, 'c', 'edit', '{"description":"修正 known-secret-value 配置"}')])
+  const page = await rt.extraToolList({ sessionId: 'owned' }, undefined, { deviceKind: 'phone' })
+  assert.equal(page.items[0].description, '修正 [secret:TEST] 配置')
+  assert.equal(toolsFromEvents([start, call(2, 'x', 'edit', '{}')], 'owned')[0].description, undefined)
+})
+test('工具列表仅携带脱敏路径和短说明，密钥库不可用时两者都不传输', async () => {
+  const rt = toolsRuntime([start, call(2, 'c', 'read', JSON.stringify({ file_path: '/repo/known-secret-value/file.ts', description: '核对 known-secret-value 文件' }))])
+  const listed = await rt.extraToolList({ sessionId: 'owned' }, undefined, {})
+  assert.equal(listed.items[0].filePath, '/repo/[secret:TEST]/file.ts')
+  assert.equal(listed.items[0].description, '核对 [secret:TEST] 文件')
+  assert.equal(listed.items[0].arguments, undefined); assert.equal(listed.items[0].output, undefined)
+  rt.secretStoreStatus = () => ({ locked: true })
+  const locked = await rt.extraToolList({ sessionId: 'owned' }, undefined, {})
+  assert.equal(locked.items[0].filePath, undefined); assert.equal(locked.items[0].description, undefined)
+})
+test('短说明先脱敏再截断，跨越标题上限的密钥不会留下部分值', async () => {
+  const description = `${'x'.repeat(310)} known-secret-value`
+  const rt = toolsRuntime([start, call(2, 'c', 'bash', JSON.stringify({ description }))])
+  const listed = await rt.extraToolList({ sessionId: 'owned' }, undefined, {})
+  assert.equal(listed.items[0].description.includes('known-'), false)
+  assert.ok(listed.items[0].description.length <= 320)
 })
 
 test('工具详情按需分页、仅遮盖敏感值并拒绝跨会话及篡改游标', async () => {

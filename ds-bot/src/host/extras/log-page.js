@@ -39,12 +39,37 @@ export function ownedSession(rt, body, options = {}) {
   return { id, botId, roomId, minSeq, includeHidden: options.fullMessages === true || roomId !== undefined }
 }
 
+// 旧版 DSH 的 page 要求显式截止序号；只读取现有 Agent 或被动投影，不激活旧会话。
+export async function historyThroughSeq(rt, sessionId, signal) {
+  const check = () => { if (signal?.aborted) throw failure('bot/refused', 'The request was canceled') }
+  check()
+  const next = rt.ctx.get?.('agents')?.get?.(sessionId)?.session?.seq
+  if (Number.isSafeInteger(next) && next >= 0) return next - 1
+  if (typeof rt.ctx.sessionController?.projections !== 'function') {
+    throw failure('bot/unavailable', '当前宿主无法提供可靠的历史截止序号，请更新宿主后重试。')
+  }
+  const baseline = await rt.ctx.sessionController.projections({ sessionId }, signal)
+  check()
+  if (baseline === null) throw failure('bot/not-found', '找不到这条会话的历史记录。')
+  if (baseline?.kind !== 'sequenced' || !Number.isSafeInteger(baseline.asOfSeq) || baseline.asOfSeq < -1 || Object.is(baseline.asOfSeq, -0)) {
+    throw failure('bot/unavailable', '会话历史尚未提供可靠的日志序号，请先在宿主完成迁移或刷新后重试。')
+  }
+  return baseline.asOfSeq
+}
+
 export async function logPage(rt, scope, beforeSeq, signal) {
   if (beforeSeq !== undefined && (!Number.isSafeInteger(beforeSeq) || beforeSeq < 1)) throw failure('bot/invalid', 'The history cursor is invalid')
   if (signal?.aborted) throw failure('bot/refused', 'The request was canceled')
   const timeout = AbortSignal.timeout(HISTORY_TIMEOUT_MS)
-  const page = await rt.ctx.sessionController.page({ address: { kind: 'session', sessionId: scope.id }, maxMessages: 60,
-    ...(beforeSeq === undefined ? {} : { beforeSeq }) }, signal === undefined ? timeout : AbortSignal.any([signal, timeout]))
+  const reading = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+  // 同一次详情查找和轮次回溯共用固定切面，不混入读取期间新增的同编号调用。
+  scope.throughSeq ??= await historyThroughSeq(rt, scope.id, reading)
+  if (!Number.isSafeInteger(scope.throughSeq) || scope.throughSeq < -1 || Object.is(scope.throughSeq, -0)) throw failure('bot/invalid', 'The history boundary is invalid')
+  if (reading.aborted) throw failure('bot/refused', 'The request was canceled')
+  if (scope.throughSeq < scope.minSeq) return { events: [], beforeSeq: null }
+  const page = await rt.ctx.sessionController.page({ address: { kind: 'session', sessionId: scope.id }, throughSeq: scope.throughSeq, maxMessages: 60,
+    ...(beforeSeq === undefined ? {} : { beforeSeq }) }, reading)
+  if (reading.aborted) throw failure('bot/refused', 'The request was canceled')
   const records = Array.isArray(page?.records) ? page.records : []
   const raw = records.slice(-PAGE_EVENTS).map(record => record.event).filter(Boolean)
   const events = raw.filter(event => !Number.isInteger(event.seq) || event.seq >= scope.minSeq)

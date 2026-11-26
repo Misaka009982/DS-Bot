@@ -15,8 +15,9 @@
 | `ds-bot/src/host/extras/write-settings.js`、`access.js` | 串行设置保存、失败回退与设备消息授权 |
 | `ds-bot/src/host/extras/new-session.js`、`ds-bot/src/client/extras/new-session.js` | Manage 中确认新建干净私聊；保留 Bot 设置／记忆和旧历史，复用原切段交接及恢复 |
 | `ds-bot/src/host/extras/session-tools.js` | 仅主 Bot 使用的模型暂停与回执绑定的新建会话；执行时重验权，默认保留排队输入，拒绝未完成的旧私聊交接 |
+| `ds-bot/src/host/extras/private-goal.js`、`ds-bot/src/client/extras/private-goal.js` | 用户显式启动的私聊持久目标、完成／阻塞记录、空闲续跑与停止保护；协议见 [private-goal.md](private-goal.md) |
 | `ds-bot/src/host/extras/archive.js` | 24 小时归档候选、保护规则、公开归档接口和冷历史读取 |
-| `ds-bot/src/host/extras/log-page.js`、`tools.js` | 所有权检查、日志分页、PTC 子调用和工具详情 |
+| `ds-bot/src/host/extras/log-page.js`、`tools.js` | 所有权检查、固定真实 throughSeq 的日志分页、PTC 子调用和工具详情；截止序号只取现有 Agent 或非激活投影 |
 | `ds-bot/src/host/extras/messages.js`、`todos.js` | 内部消息、失败／重试状态与真实工具待办 |
 | `ds-bot/src/host/extras/delegations.js` | 基于 DSH 持久父子目录、实际子会话与结算事件的只读委派；协议见 [delegations.md](delegations.md) |
 | `ds-bot/src/host/extras/resources.js`、`terminals.js`、`workspace.js`、`tool-changes.js` | 设备资源授权／短期句柄、真实用户 PTY、受限文件与实际修改记录；协议见 [resources.md](resources.md) |
@@ -27,29 +28,32 @@
 | `addons/` | 固定版本、接入检查、打包与用户验收文档 |
 | `.github/workflows/release-addons.yml` | 原版／增补独立验证，npm pack 后上传 Releases |
 
-现有源码的变更集中在 `manifest.json` 的 30 个固定接入文件；测试和发布门禁另行列出。不能只复制 `extras/` 而遗漏这些接入点。
+现有源码的变更集中在 `manifest.json` 的 33 个固定接入文件；测试和发布门禁另行列出。不能只复制 `extras/` 而遗漏这些接入点。
 
 ## 原文件接入点
 
 | 文件 | 必要接入 |
 | --- | --- |
 | `ds-bot/index.js` | 安装一个 `extras` 模块，保留上游模块顺序 |
-| `host/turns.js` | 在上游已有的 prompt 适配处传入新请求模式，不修改 DSH |
-| `host/bot-tasks.js` | 显式 queue／steer 输入不转成新的后台任务 |
+| `host/turns.js` | 在上游已有的 prompt 适配处传入新请求模式；结算后通知私聊目标，停止入口冻结后续目标续跑；阻塞绑定失败会话／轮次／事件，同来源后续成功才清理并记录 recovery，不修改 DSH |
+| `host/bot-tasks.js` | 显式 queue／steer 或活跃私聊目标保留前台会话，不自动挪为新后台任务 |
 | `host/channel.js` | 增补状态、端点分发、已认证调用上下文、传递 send.mode |
 | `host/phone.js` | 从真实配对记录验权，传递消息／资源授权上下文，设备列表显示独立读写授权；`phone-set.serverName` 保存服务器扫码名称，二维码与浏览器链接只变显示名，原身份／授权不变 |
 | `host/remote.js` | Gateway 不得冒充已配对设备，不得修改电脑授权 |
-| `host/parts.js` | 可选增强投影／工具字段、旧段冷读取；新建会话只替换上下文准备，复用原切段锁／转交／恢复；默认旧格式不变 |
+| `host/parts.js` | 可选增强投影／工具字段、旧段冷读取；新建会话只替换上下文准备，复用原切段锁／转交／恢复；现有 pre-step 拒绝失效的私聊目标续跑，正常用户输入保持原行为 |
 | `host/mobile.js` | 群聊增强投影和旧群段冷读取 |
 | `host/feed.js` | 稳定命名原 SSE 会话事件回调供测试定位，不新增监听器、不改变消息发布或权限 |
-| `host/constants.js`、`host/builtin-packs.js` | 登记 `pause_bot`／`new_bot_session` 并纳入原 `team-admin` 包；普通 Bot 默认不可见，执行仍由服务端校验主角色 |
+| `host/constants.js`、`host/builtin-packs.js` | 登记 `pause_bot`／`new_bot_session` 并纳入原 `team-admin` 包；普通 Bot 默认不可见，执行仍由服务端校验主角色。`constants.js` 另外登记只允许更新自身私聊目标的 `bot_goal` |
+| `host/resume.js` | 不把重启前的目标自动回合转换为普通恢复提示重放，普通用户／协作工作沿用原恢复路径 |
+| `host/tools.js` | 主 Bot 的 `stop_bot` 先冻结目标续跑，再沿用原停止与回执路径 |
+| `client/command-actions.js` | `extras.privateGoal.schema:1` 时，私聊裸 `/goal` 打开目标设置；群入口不变 |
 | `host/prompt.js` | 主 Bot 先暂停并取得回执，再新建干净会话；禁止盲目重试、重放非幂等任务或把切换成功当作故障恢复 |
 | `shared/browser-endpoints.js` | 逐项登记增补端点；团队默认、委派、历史 diff 与资源读写分别验权，完整消息不授予终端／文件权限，不放开原敏感端点或 DSH Agent 浏览器权限 |
 | `client/settings.js` | 通用 → 基础插入默认消息发送方式与默认归档开关，不依赖 DSH 是否注册 `composer-enter` 插槽 |
 | `client/bot-settings.js`、`phone-page.js` | 额外卡片／设备消息与资源授权，Manage 插入新建会话行；手机连接页插入服务器名称及仅显式关闭的用户终端清理入口，旧服务器按字段门控 |
 | `client/team-actions.js` | 设置、当前 Session 新建请求、后台任务读取及固定的用户终端清理端点 |
-| `client/index.js`、`app/ui/src/team.js` | 合并增补 live 字段 |
-| `client/cells.js`、`bot-tasks.js` | 复用增补工具摘要和纯文本消息组件 |
+| `client/index.js`、`app/ui/src/team.js` | 合并增补 live 字段；原生 `toolFace` 注入公开 ChatSnapshot 的连续工具分组源 |
+| `client/cells.js`、`bot-tasks.js` | 复用增补工具摘要和纯文本消息组件；原生工具节点按连续段只保留一个摘要，历史 ChatRows 合并连续工具行，详情格式见 [tool-display.md](tool-display.md) |
 | `app/ui/src/chat.js` | 读取增强页、合并刷新，未知旧接口才回退 |
 | `mobile/src/connection.ts` | 只增可选字段，不破坏原状态契约 |
 | `mobile/src/team/link.ts`、`gate.ts` | 发送前手机门禁、增强读取、撤销时拒绝旧回包 |
@@ -60,6 +64,8 @@
 `manifest.json` 的 `anchor` 保留原接入检查；同一文件的新增接入由可选 `anchors` 逐项验证。新建会话还需语义核对 `runMaintenance`、`startSwitch` 的错误／恢复流程、`save({ required: true })` 的所有权索引、模型／权限应用和 `moveSchedules`；不能仅凭锚点存在断言兼容。
 
 `extra-*` 是新增协议，不把 `job_output` 名称、普通聊天文字或“未确认”当作完整工具结果。增强字段仅增强客户端使用，原 `chat`／`steps:true` 等旧调用保留原格式。
+
+`logPage` 与归档活动读取显式传入真实 `throughSeq`，兼容旧宿主的必填分页契约；同一次增补扫描共享固定切面。旧会话只用 `sessionController.projections` 的 `sequenced/asOfSeq` 或已加载 Agent，不为补参数激活会话；无可靠序号、迁移中或授权拒绝时明确失败。此修复属于既有 `extras/` 模块，不增加原文件接入点。
 
 PTY 与工作区已注册有限端点，只有公开服务存在时声明相应能力；配对授权默认关闭。终端使用 `subprocess.spawnTerminal` 创建插件用户 PTY，不接管 Agent／DSH 已有终端；输出读取不抢控制权。文件保存使用 `replaceIfVersion` 和单次回执，历史 diff 只取成功结果 `meta.diffs`，不从参数伪造。协议见 [resources.md](resources.md)，接口依据及跨进程／TOCTOU 的保证上限见 [resource-audit.md](resource-audit.md)。静态检查不能解除真实宿主和强文件隔离验收门禁。
 
@@ -73,11 +79,17 @@ PTY 与工作区已注册有限端点，只有公开服务存在时声明相应�
 
 服务器扫码名称复用仅电脑本机可调用的 `phone-set`，不新增远程端点。可选 `serverName` 保存在现有 `phone.json`；空值删除覆盖并回退 `hostname()`，读取视图始终提供字符串 `phone.serverName`，旧服务器没有该字段时隐藏编辑入口。上限沿用配对／握手的 64 个 UTF-16 代码单元；名称不参与身份或授权判断，不更新手机已保存的名称。名称保存失败恢复原内存值，已有二维码只更新名称而不另开配对窗口或延长有效期。
 
+私聊目标由 `extra-goal-control` 按目标编号、当前会话和 revision 修改，目标保存在 `bot.extras.goal`，通过 `extras.privateGoal.schema:1` 宣告入口。正常换段保留；停止、手动新建与重启暂停；只有有待续跑事项且当前私聊不存在其他待处理工作时才追加目标提示。`bot_goal` 只能更新当前私聊已有目标，不能替用户开启或恢复。具体状态、并发保护和验收见 [private-goal.md](private-goal.md)。
+
+资源读取续轮补齐三处契约：工具列表按实际调用序号消除重复事件、结果按调用区间关联，真实参数中的短说明仅在密钥保护就绪时脱敏投影；内部协作只为原交换账本中仍可核对且非私密的 Bot 对附加 `exchange`；工作区声明 `readOnlyPreview:true`，`extra-workspace-read` 的可选 `readOnly:true` 不分配编辑回执。终端关闭同时等待输出排空和 `done`，避免关闭回包缺少迟到退出事实。
+
+恢复关联的新增锚点为 `const unblockBot = (botId, id, session, turn, seq, watched) => {`，已登记到原 `turns.js` 清单。新阻塞保存 `sessionId/turn/seq`，正常完成只在观察到同会话、不早于失败的轮次、较新事件和同提供方时撤销，`bot.recovery` 保留失败／完成序号；无关联的旧阻塞保持保守，凭据／模型变更的原清理路径不变。以上源码不代表用户故障已复现或已部署。
+
 ## 升级顺序
 
 1. 用户明确选定下一份正式 Release，记录 tag 与完整提交。
 2. 在独立干净目录验证原版插件、link、手机与桌面构建；不要先带入增补。
-3. 比较 30 个接入文件的语义，尤其 prompt、inbox、归档／卸载、配对、错误事件、PTC 与分页契约。锚点文本相同也不代表语义兼容。
+3. 比较 33 个接入文件的语义，尤其 prompt、inbox、归档／卸载、配对、错误事件、PTC 与分页契约。锚点文本相同也不代表语义兼容。
 4. 只移植独立目录和逐个固定接入点。未知协议／任务状态应失败或跳过，不静默猜测。
 5. 更新 `manifest.json`、检查脚本、固定测试及 release workflow 中原版 checkout 的 SHA；重新编号增补／包版本。
 6. 重新生成 `client.js`／`link.js`／`office.js`，运行双方独立验证。若原版失败，优先定位上游／环境；原版成功而增补失败，再定位增补。

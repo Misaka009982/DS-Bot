@@ -5,7 +5,7 @@
 //
 //   - Scheduled task (`/scheduled-task`) opens this chat's scheduled tasks.
 //   - In a group chat, a bare `/goal` opens DS Bot's group goal instead of DSH's goal
-//     command. The DSH row stays; the decoration replaces its bare invocation only.
+//     command. 支持增补的 Bot 私聊则打开自己的目标设置面板。
 //
 // "Reference a chat" stays in the composer's "+" menu: a command action receives the
 // Session only, never the composer's caret/insertion, and the reference menu opens at
@@ -24,6 +24,7 @@ export function commandEntries({ roster, actions }) {
   }
   const isRoom = sessionId => roster.getSnapshot().roomsById?.[sessionId] !== undefined
   const isBotSurface = sessionId => entry(sessionId) !== undefined
+  const privateGoal = sessionId => roster.getSnapshot().extras?.privateGoal?.schema === 1 && roster.getSnapshot().byId?.[sessionId] !== undefined
   return {
     contributions: [{
       name: SCHEDULED_TASK,
@@ -41,12 +42,13 @@ export function commandEntries({ roster, actions }) {
     }],
     decorations: [{
       name: 'goal',
-      available: session => isRoom(session?.sessionId),
+      available: session => isRoom(session?.sessionId) || privateGoal(session?.sessionId),
       ui: {
         kind: 'action',
         run(session) {
           const room = roster.getSnapshot().roomsById?.[session?.sessionId]
           if (room !== undefined) actions.composeGoal(room.id)
+          else if (privateGoal(session?.sessionId)) actions.openSettings('bots', entry(session.sessionId).id)
         },
       },
     }],

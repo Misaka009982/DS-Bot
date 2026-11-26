@@ -301,7 +301,7 @@ export function install(rt) {
       await rt.deliver({ toId: bot.id, sessionId: room.sessions?.[bot.id] ?? sessionId, role: 'room', roomId: room.id, note: 'picking up after a restart', resumed: true, text, ...(record.trigger?.askedBy ? { askedBy: record.trigger.askedBy } : {}) })
       return true
     }
-    if (record.resumed) return false
+    if (record.resumed || rt.extraGoalBlocksResume?.(record)) return false
     // The turn ran in a part that is still one of the Bot's: it goes on there, not in the
     // foreground chat when that part is a background one. A part gone since (archived and
     // dropped) falls back to the Bot's current chat.

@@ -109,12 +109,29 @@ test('关闭等待真实 terminate 确认，重复关闭不创建也不再次输
   const tail = await f.call('extra-terminal-read', { handleId: opened.handleId, offset: 0 })
   assert.equal(Buffer.from(tail.data, 'base64').toString('utf8'), '关闭前的尾部输出')
   assert.equal(tail.outputEnded, true)
+  assert.equal(tail.status, 'closed'); assert.equal(tail.exitCode, 0)
   assert.equal((await f.call('extra-terminal-close', { handleId: opened.handleId })).status, 'closed')
   assert.equal(f.processes[0].closed, 1)
   await assert.rejects(create(f), { code: 'bot/stale' })
   assert.equal(f.processes.length, 1)
 })
 
+test('关闭须等待输出与done各自结算，迟到退出码不丢失', async t => {
+  const f = resourceBench(t)
+  await f.grant({ terminalRead: true, terminalWrite: true })
+  const opened = await create(f)
+  const process = f.processes[0]
+  process.terminate = async () => { process.closed += 1; process.output.end() }
+  let settled = false
+  const closing = f.call('extra-terminal-close', { handleId: opened.handleId }).then(result => { settled = true; return result })
+  await setImmediate()
+  assert.equal(settled, false)
+  const interim = await f.call('extra-terminal-read', { handleId: opened.handleId, offset: 0 })
+  assert.equal(interim.status, 'closing'); assert.equal(interim.outputEnded, true)
+  process.exit(7)
+  const result = await closing
+  assert.equal(result.status, 'closed'); assert.equal(result.exitCode, 7)
+})
 test('输出环形预算报告截断且不伪造屏幕快照', () => {
   const output = terminalBuffer(8)
   output.append(Buffer.from('12345'))

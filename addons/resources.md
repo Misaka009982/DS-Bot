@@ -1,11 +1,11 @@
 # 服务器资源增补协议
 
-本协议对应 DS-Bot 增补 1.1.0 服务端源码。能力由 `state.extras` 或 `extra-status` 返回；未声明的模块不可调用，不通过通用 Gateway 转发未知方法。Deck 与手机终端／文件面板尚未在本轮接入，实际服务器验证仍待用户完成；构建以发布 CI 记录为准。
+本协议对应 DS-Bot 增补 1.1.0 及当前未发布补丁的服务端源码。能力由 `state.extras` 或 `extra-status` 返回；未声明的模块不可调用，不通过通用 Gateway 转发未知方法。Deck 已完成本地终端／文件面板接线，手机保留原清理入口；真实服务器验收仍待用户完成，既有发布构建不能证明后续补丁已安装。
 
 ## 能力和设备授权
 
 - `extras.terminals: { schema: 1, read, write }`：真实 PTY 服务存在时声明，已有插件终端待清理时也保留入口。
-- `extras.workspace: { schema: 1, read, write }`：公开 `fs` 与 `sessionQuery` 方法可用时声明；没有 `writeText` 时 `write` 为 false。
+- `extras.workspace: { schema: 1, read, write, readOnlyPreview?: true }`：公开 `fs` 与 `sessionQuery` 方法可用时声明；没有 `writeText` 时 `write` 为 false。`readOnlyPreview` 为后续补丁新增的可选声明，旧客户端省略读取标志仍保持原协议。
 - `extras.toolChanges: { schema: 1, read }`：历史工具修改元数据读取，不读取当前文件。
 - 缺模块、设备未授权、句柄失效和结果未知分别处理；能力检查不会创建进程、打开 Agent 或读取文件正文。
 
@@ -42,7 +42,7 @@
 | `extra-terminal-read` | `{ handleId, offset }` → `data`（base64 原始 PTY 字节）、`from`、`nextOffset`、`throughOffset`、`truncated`、退出／输出状态、最近控制结果 |
 | `extra-terminal-input` | `{ handleId, sequence, data }` → `accepted`／`pending`／`unknown`；`data` 为有效 Unicode 字符串，最大 16 KiB UTF-8 |
 | `extra-terminal-resize` | `{ handleId, sequence, cols, rows }` → 同输入回执；列数 2–500，行数 1–200 |
-| `extra-terminal-close` | `{ handleId }` → 仅在提供方 `terminate()` 和剩余输出排空后确认 `closed`；失败为 `close-unknown` |
+| `extra-terminal-close` | `{ handleId }` → 仅在提供方 `terminate()`、剩余输出排空及 `done` 结算后确认 `closed`；失败为 `close-unknown` |
 
 创建请求按设备身份和 `requestId` 去重；同一编号不同目标／尺寸被拒绝，已经关闭的请求不会重新创建。每次宿主生命周期最多保留 256 份创建回执，达到上限明确拒绝；关闭并重启由用户决定。最多保留 32 个未明确关闭的终端，每会话 8 个；自然退出仍保留输出和清理入口。
 
@@ -58,7 +58,7 @@
 | --- | --- |
 | `extra-workspace-open` | `{ scope, sessionId }` → `rootId`、会话、过期时间、大小预算和写能力 |
 | `extra-workspace-list` | `{ rootId, path, cursor? }` → 名称／类型／可用大小、`filtered`、下一游标；根路径用空串 |
-| `extra-workspace-read` | `{ rootId, path }` → 完整 UTF-8 `text`、不透明 `version`、`redacted`、`editable`、可选 `receiptId` |
+| `extra-workspace-read` | `{ rootId, path, readOnly? }` → 完整 UTF-8 `text`、不透明 `version`、`redacted`、`editable`、可选 `receiptId`；已声明 `readOnlyPreview` 时可用 `readOnly:true` 预览而不领取编辑回执 |
 | `extra-workspace-save` | `{ rootId, receiptId, requestId, content }` → 保存回执状态及成功时的新 `version` |
 | `extra-workspace-save-status` | `{ rootId, receiptId }` → `ready`／`pending`／`saved`／`conflict`／`failed`／`unknown` |
 | `extra-workspace-change` | `{ rootId, receiptId }` → `source: 'workspace-save'`、实际 `before`／`after`、`complete`、`redacted` |
@@ -77,7 +77,7 @@
 
 `extra-tool-change { sessionId, callId, callSeq, index?, digest? }` 在明确归属与完整消息授权后，从原生 `tool/result.data.meta` 或 PTC `tool/ptc-dispatch.data.meta` 读取 `diffs`。只接受已确认成功的 `write`、`edit`、`apply_patch` 记录；PTC 的 `parentCallId`、`isError` 和 `content` 使用公开字段，旧格式只保留既有兼容读取。
 
-每次返回一个真实 hunk：`schema: 1`、`source: 'tool-result'`、原会话／调用／调用序号／结果序号、`index`、`total`、`nextIndex`、`path`、`oldText`、`newText`、`oldAvailable`、`stopped`、`redacted`、`pathRedacted` 和摘要 `digest`。同编号再次调用也按原调用序号隔离结果。
+每次返回一个真实 hunk：`schema: 1`、`source: 'tool-result'`、原会话／调用／调用序号／结果序号、`index`、`total`、`nextIndex`、`path`、`oldText`、`newText`、`oldAvailable`、`stopped`、`redacted`、`pathRedacted` 和摘要 `digest`。同编号再次调用也按原调用序号隔离结果。工具短列表同步按实际事件序号区分各次调用，结果只归给前一对应调用区间，隐藏调用仍形成边界；重复事件不增加条目。短说明只取真实参数的 `description`／`justification` 并脱敏，缺失不生成。
 
 最多 256 个 hunk，单个 old／new 各 64 KiB；超过预算时明确该片段不可完整展示，保留下一索引。`stopped: true` 表示补丁仅有已记录的部分成功，不能渲染为整批完成。`oldText: null` 表示没有旧文本，不推断为新文件；元数据缺失、失败或未完成均不从参数、成功文案或当前文件补造 diff。路径只是当时的记录，打开当前文件仍须取得新的工作区根并重新验权，不能作为任意路径访问令牌。
 

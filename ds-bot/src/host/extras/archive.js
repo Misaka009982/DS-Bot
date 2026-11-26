@@ -1,5 +1,6 @@
 import { HISTORY_TIMEOUT_MS } from '../constants.js'
 import { autoArchive } from './settings.js'
+import { historyThroughSeq } from './log-page.js'
 
 export const DAY_MS = 24 * 60 * 60_000
 const SETTLED = new Set(['completed', 'failed', 'interrupted', 'stopped'])
@@ -84,7 +85,9 @@ export async function archiveExpired(rt, now = Date.now(), halted = () => false,
     result.checked += 1
     if (!enabled(rt, bot) || rt.botOf(bot.id) !== bot || task !== undefined && !SETTLED.has(task.status) || archiveBlocked(rt, sessionId, scheduled)) { result.skipped += 1; continue }
     try {
-      const page = await rt.ctx.sessionController.page({ address: { kind: 'session', sessionId }, maxMessages: 1 }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
+      const signal = AbortSignal.timeout(HISTORY_TIMEOUT_MS)
+      const throughSeq = await historyThroughSeq(rt, sessionId, signal)
+      const page = await rt.ctx.sessionController.page({ address: { kind: 'session', sessionId }, throughSeq, maxMessages: 1 }, signal)
       const lastAt = Math.max(candidate.lastAt, ...(page?.records ?? []).map(record => stamp(record?.event?.time)))
       if (lastAt >= now - DAY_MS || halted() || !enabled(rt, bot) || rt.botOf(bot.id) !== bot || rt.readOnly() !== undefined || archiveBlocked(rt, sessionId, scheduled)) { result.skipped += 1; continue }
       await registry.archiveSession(sessionId)

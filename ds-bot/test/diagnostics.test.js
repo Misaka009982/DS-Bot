@@ -293,12 +293,12 @@ test('a failure only the user can fix blocks its Bot with the facts, never the m
   rt.bots.b.appliedModel = 'deepseek-official/deepseek-v4-flash'
   fail(1, { code: 'AUTH', message: 'bad key sk-12***34', status: 401, requestId: 'r1' })
   const { at, ...facts } = rt.bots.b.blocked
-  assert.deepEqual(facts, { code: 'AUTH', status: 401, requestId: 'r1', provider: 'deepseek-official' })
+  assert.deepEqual(facts, { code: 'AUTH', status: 401, requestId: 'r1', provider: 'deepseek-official', sessionId: 'b', turn: 1, seq: 2 })
   assert.equal(typeof at, 'number')
   // The route of the request that failed names the provider.
   const account = { id: 'b', requestHeader: () => ({ config: { provider: 'deepseek-account', model: 'deepseek-v4-flash' } }) }
   fail(2, { code: 'ACCOUNT_TOKEN_INVALID', message: '' }, account)
-  assert.deepEqual(Object.keys(rt.bots.b.blocked), ['code', 'provider', 'at'])
+  assert.deepEqual(Object.keys(rt.bots.b.blocked), ['code', 'provider', 'at', 'sessionId', 'turn', 'seq'])
   assert.equal(rt.bots.b.blocked.provider, 'deepseek-account')
   // A failure a retry can fix, or a stopped turn, leaves the block as it is.
   fail(3, { code: 'SERVER', message: 'busy', status: 503 })
@@ -307,7 +307,29 @@ test('a failure only the user can fix blocks its Bot with the facts, never the m
   assert.equal(rt.bots.b.blocked.code, 'ACCOUNT_TOKEN_INVALID')
   emit('b', 'turn/start', { turn: 5 })
   emit('b', 'turn/end', { turn: 5, reason: { kind: 'completed' } })
+  assert.equal(rt.bots.b.blocked.code, 'ACCOUNT_TOKEN_INVALID', '不同路由的成功不能证明原故障恢复')
+  emit('b', 'turn/start', { turn: 6 }, account)
+  emit('b', 'turn/end', { turn: 6, reason: { kind: 'completed' } }, account)
   assert.equal(rt.bots.b.blocked, undefined)
+  assert.equal(rt.bots.b.recovery.failedTurn, 2)
+  assert.equal(rt.bots.b.recovery.completedTurn, 6)
+})
+test('其他会话、重放的旧完成和无关联旧阻塞不误清当前故障', () => {
+  const { rt, emit } = turnsHost()
+  rt.selfOf = id => ['b', 'old-b'].includes(id) ? 'b' : id
+  emit('b', 'turn/start', { turn: 4 })
+  emit('b', 'turn/end', { turn: 4, reason: { kind: 'error', error: { code: 'AUTH', status: 401 } } })
+  const blocked = rt.bots.b.blocked
+  emit('old-b', 'turn/start', { turn: 5 })
+  emit('old-b', 'turn/end', { turn: 5, reason: { kind: 'completed' } })
+  assert.equal(rt.bots.b.blocked, blocked)
+  emit('b', 'turn/end', { turn: 2, reason: { kind: 'completed' } })
+  assert.equal(rt.bots.b.blocked, blocked)
+  assert.ok(rt.bots.b.failures.b)
+  rt.bots.b.blocked = { code: 'AUTH', at: 1 }
+  emit('b', 'turn/start', { turn: 6 })
+  emit('b', 'turn/end', { turn: 6, reason: { kind: 'completed' } })
+  assert.deepEqual(rt.bots.b.blocked, { code: 'AUTH', at: 1 })
 })
 
 test('a greeting a key, a sign-in or a balance stopped is held again; one that failed otherwise is not', () => {

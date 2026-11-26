@@ -33,6 +33,21 @@ test('基础插话模式在异步 inbox 插入期间保留，并发请求不会�
   await rt.extraSendPrompt({ sessionId: 'current', mode: 'steer' }, async request => assert.equal(request.mode, 'queue'))
 })
 
+test('活跃私聊目标保留当前前台，暂停后恢复原来的消息交接判断', async () => {
+  const bot = { id: 'bot' }
+  let active = true
+  const rt = { chatOwners: new Map([['current', 'bot']]), taskOwners: new Map(), groupOwners: new Map(),
+    botOf: id => id === 'bot' ? bot : undefined, selfOf: () => 'bot',
+    extraHasActiveGoal: id => active && id === 'current' }
+  installPrompt(rt)
+  assert.equal(rt.extraKeepForeground('current'), true)
+  assert.equal(rt.extraKeepForeground('another'), false)
+  const request = { sessionId: 'current', mode: 'queue' }
+  await rt.extraSendPrompt(request, async received => assert.equal(received, request))
+  active = false
+  assert.equal(rt.extraKeepForeground('current'), false)
+})
+
 test('团队默认穿过原生 prompt 和前台交接，群聊、后台与内部消息保持原模式', async () => {
   const bot = { id: 'bot' }
   const owners = new Map([['current', 'bot'], ['task', 'bot']])

@@ -118,7 +118,7 @@ export function install(rt) {
           maxFileBytes: MAX_FILE_BYTES, pageSize: PAGE_SIZE, writable: rt.extraWorkspaceAvailable().write && (caller === undefined || caller.resources?.()?.permissions?.filesWrite === true) }
       }
       const allowed = endpoint === 'extra-workspace-list' ? ['rootId', 'path', 'cursor']
-        : endpoint === 'extra-workspace-read' ? ['rootId', 'path']
+        : endpoint === 'extra-workspace-read' ? ['rootId', 'path', 'readOnly']
           : endpoint === 'extra-workspace-save' ? ['rootId', 'receiptId', 'requestId', 'content'] : ['rootId', 'receiptId']
       resourceFields(body, allowed)
       const root = roots.get(body.rootId, access.principal())
@@ -147,6 +147,7 @@ export function install(rt) {
           cursor: offset + page.length < entries.length ? { digest, offset: offset + page.length } : null }
       }
       if (endpoint === 'extra-workspace-read') {
+        if (body.readOnly !== undefined && typeof body.readOnly !== 'boolean') throw invalidResource()
         await secrets(access)
         const located = await locate(context, body.path, false, fused)
         if (located.info.type !== 'file') throw resourceFailure('bot/not-found', '所选路径不是普通文件。')
@@ -161,7 +162,7 @@ export function install(rt) {
         context.check()
         const shown = mask(content)
         const redacted = shown !== content
-        const editable = !redacted && rt.extraWorkspaceAvailable().write && (caller === undefined || caller.resources?.()?.permissions?.filesWrite === true)
+        const editable = body.readOnly !== true && !redacted && rt.extraWorkspaceAvailable().write && (caller === undefined || caller.resources?.()?.permissions?.filesWrite === true)
         const handle = editable ? receipts.add({ rootId: body.rootId, path: body.path, targetKey: located.target.targetKey,
           version: located.info.version, digest: resourceDigest(content), status: 'ready' }, access.principal()) : null
         return { schema: 1, rootId: body.rootId, path: body.path, version: located.info.version, text: shown,

@@ -18,7 +18,7 @@ export const BROWSER_ALLOWED = new Set([
   // 增补的只读消息／工具／待办接口；fullMessages 仍由电脑逐设备验权。
   'extra-status', 'extra-tool-detail', 'extra-tool-change', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read',
   'extra-delegation-list', 'extra-delegation-read',
-  'extra-bot-set', 'extra-defaults-set', 'extra-new-session',
+  'extra-bot-set', 'extra-defaults-set', 'extra-new-session', 'extra-goal-control',
   // 资源端点由服务端逐设备分开校验读写授权、根目录与句柄归属。
   'extra-terminal-list', 'extra-terminal-read', 'extra-terminal-create', 'extra-terminal-input', 'extra-terminal-resize', 'extra-terminal-close',
   'extra-workspace-open', 'extra-workspace-list', 'extra-workspace-read', 'extra-workspace-save', 'extra-workspace-save-status', 'extra-workspace-change',
