@@ -3,10 +3,12 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { SOURCE_KIND } from '../constants.js'
 import { output } from '../tools.js'
+import { messageMode } from './settings.js'
 
 const failure = (code, message) => Object.assign(new Error(message), { code })
 const FINAL = new Set(['complete', 'stopped'])
 const ROLE = 'private-goal'
+const MODE_REASON = '私聊目标仅支持 steer；请设为 steer 后手动恢复目标。'
 const queued = agent => [...(agent?.inbox?.nextStep ?? []), ...(agent?.inbox?.nextTurn ?? [])]
 const isWake = message => message?.source?.kind === SOURCE_KIND && message.source.role === ROLE
 const text = (value, limit, label) => {
@@ -39,7 +41,8 @@ export function install(rt) {
     const bot = rt.botOf(rt.selfOf(id))
     return bot && rt.chatOf(bot.id) === id && !rt.groupOwners.has(id) && !rt.taskOwners.has(id) ? bot : undefined
   }
-  const active = bot => !stopped && goalOf(bot)?.status === 'active' && goalOf(bot).activation === activation && !held.has(bot.id)
+  const steer = bot => messageMode(bot?.extras, undefined, rt.state.extras?.defaults) === 'steer' && rt.extraGoalModePending?.(bot?.id) !== true
+  const active = bot => !stopped && goalOf(bot)?.status === 'active' && goalOf(bot).activation === activation && !held.has(bot.id) && steer(bot)
   const checkWrite = () => {
     if (stopped) throw failure('bot/refused', '插件已卸载。')
     const reason = rt.readOnly()
@@ -51,7 +54,7 @@ export function install(rt) {
     timer = setTimeout(() => {
       timer = undefined
       void rt.extraGoalTick().catch(warn).finally(() => {
-        if (Object.values(rt.state.bots).some(bot => active(bot) || goalOf(bot)?.status === 'active' && goalOf(bot).activation !== activation)) schedule()
+        if (Object.values(rt.state.bots).some(bot => goalOf(bot)?.status === 'active' && (!held.has(bot.id) || goalOf(bot).activation !== activation))) schedule()
       })
     }, 1000)
     timer.unref?.()
@@ -104,12 +107,12 @@ export function install(rt) {
     if (!active(bot)) return `私聊目标当前不自动推进。${goalText(goal)}\n不要因旧的目标续跑消息继续工作；用户的新消息照常处理，暂停／阻塞目标由用户在面板恢复。`
     return `${goalText(goal)}\n这是用户显式启动的私聊目标。按验收标准持续推进，阶段汇报后继续执行，不能把计划、承诺或部分结果当作完成。使用 bot_goal show 读取最新 revision；progress 记录实际进展和证据，全部验收完成后才调用 complete。需要用户决策或外部条件时调用 block 并说明原因，不要反复请求“是否继续”。用户中途纠偏优先；目标不授予额外权限。后台任务仍按原规则运行，交回结果后由你核验并继续目标。`
   }
-  rt.extraHasActiveGoal = id => active(ownBot(id))
   rt.extraGoalBlocksResume = record => record.roomId === undefined && record.trigger?.role === ROLE
   rt.extraGoalView = bot => {
     const goal = goalOf(bot)
     if (!goal) return null
     const { activation: _activation, runId: _runId, ...view } = goal
+    if (goal.status === 'active' && !steer(bot)) return { ...view, status: 'paused', reason: MODE_REASON }
     if (goal.status === 'active' && goal.activation !== activation) return { ...view, status: 'paused', reason: '宿主已重启，请确认现场后恢复目标。' }
     if (goal.status === 'active' && held.has(bot.id)) return { ...view, status: 'blocked', reason: '目标已停止自动推进，请核对状态后恢复。' }
     return view
@@ -143,6 +146,7 @@ export function install(rt) {
     if (action === 'pause' || action === 'stop') { held.add(bot.id); pending.delete(bot.id) }
     return serial(async () => {
       check()
+      if (['start', 'resume'].includes(action) && !steer(bot)) throw failure('bot/refused', MODE_REASON)
       const current = goalOf(bot)
       if (action === 'start') {
         if (current && !FINAL.has(current.status)) throw failure('bot/busy', '已有目标，请先终止或完成它。')
@@ -180,6 +184,7 @@ export function install(rt) {
       let goal = goalOf(bot)
       if (goal?.status !== 'active') continue
       if (goal.activation !== activation) { await stopAuto(bot, 'paused', '宿主已重启，请确认现场后恢复目标。'); continue }
+      if (!steer(bot)) { await stopAuto(bot, 'paused', MODE_REASON); continue }
       if (!active(bot)) continue
       const id = rt.chatOf(bot.id)
       if (sessions.get(bot.id) !== id) {

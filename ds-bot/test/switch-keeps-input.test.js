@@ -852,6 +852,7 @@ test('主 Bot 的新会话回执明确报告定时交接未完成，不再重复
 
 test('私聊目标贯通真实端点、轮次结算、状态投影和停止链路', async t => {
   const host = await start(); t.after(host.stop)
+  assert.equal((await host.call('extra-bot-set', { id: 'b', messageMode: 'steer' })).ok, true)
   const response = await host.call('extra-goal-control', { botId: 'b', sessionId: 'b', action: 'start', objective: '完成报告', acceptance: '报告已核验' })
   assert.equal(response.ok, true)
   const goalId = response.value.id
@@ -879,8 +880,26 @@ test('私聊目标贯通真实端点、轮次结算、状态投影和停止链�
   assert.deepEqual(await host.preStep('b', [wakes()[1][1]]), { kind: 'reject' })
 })
 
+test('目标端点拒绝 queue 与未配置模式，基础 steer 切换后必须手动恢复', async t => {
+  const host = await start(); t.after(host.stop)
+  const request = { botId: 'b', sessionId: 'b', action: 'start', objective: '完成报告', acceptance: '报告已核验' }
+  assert.equal((await host.call('extra-goal-control', request)).error.code, 'bot/refused')
+  assert.equal((await host.call('extra-defaults-set', { messageMode: 'steer' })).ok, true)
+  const started = await host.call('extra-goal-control', request)
+  assert.equal(started.ok, true)
+  assert.equal((await host.call('extra-defaults-set', { messageMode: 'queue' })).ok, true)
+  const paused = host.state().bots.b.extras.goal
+  assert.equal(paused.status, 'paused')
+  assert.equal((await host.call('extra-goal-control', { botId: 'b', sessionId: 'b', action: 'resume', goalId: paused.id, revision: paused.revision })).error.code, 'bot/refused')
+  assert.equal((await host.call('extra-defaults-set', { messageMode: 'steer' })).ok, true)
+  await host.rt.extraGoalTick()
+  assert.equal(host.state().bots.b.extras.goal.status, 'paused')
+  assert.equal(host.agentOf('b').calls.some(([, message]) => message?.source?.role === 'private-goal'), false)
+})
+
 test('手动新建私聊时保留目标和证据并暂停，不在新会话自动重放', async t => {
   const host = await start(); t.after(host.stop)
+  assert.equal((await host.call('extra-bot-set', { id: 'b', messageMode: 'steer' })).ok, true)
   const response = await host.call('extra-goal-control', { botId: 'b', sessionId: 'b', action: 'start', objective: '完成报告', acceptance: '报告已核验' })
   assert.equal(response.ok, true)
   const initial = response.value

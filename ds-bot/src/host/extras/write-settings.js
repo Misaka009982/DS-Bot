@@ -1,4 +1,4 @@
-import { cleanBotExtras, cleanDefaults } from './settings.js'
+import { cleanBotExtras, cleanDefaults, messageMode } from './settings.js'
 import { randomUUID } from 'node:crypto'
 import { cleanResourceGrant } from './resources.js'
 
@@ -8,18 +8,35 @@ const failure = (code, message) => Object.assign(new Error(message), { code })
 export function install(rt) {
   let writing = Promise.resolve()
   let authorizationPending = false
+  const modeChanges = new Set()
   rt.extraAuthorizationPending = () => authorizationPending
+  rt.extraGoalModePending = botId => modeChanges.has(botId)
+  const pauseForMode = (bot, settings, defaults) => {
+    if (messageMode(settings, undefined, defaults) === 'steer') return undefined
+    modeChanges.add(bot.id)
+    return rt.extraPauseGoal?.(bot.id, '私聊目标仅支持 steer；请设为 steer 后手动恢复目标。')
+  }
   rt.extraSettings = (endpoint, body, check = () => {}) => {
     const run = writing.then(async () => {
       await rt.load()
-      check()
-      if (rt.readOnly() !== undefined) throw failure('bot/read-only', rt.readOnly())
+      const checkWrite = () => {
+        check()
+        if (rt.readOnly() !== undefined) throw failure('bot/read-only', rt.readOnly())
+      }
+      checkWrite()
       if (endpoint === 'extra-bot-set') {
-        const { id, ...patch } = body
+        const { id, ...input } = body
         const bot = typeof id === 'string' ? rt.botOf(id) : undefined
         if (bot === undefined) throw failure('bot/not-found', 'Unknown Bot')
+        const patch = cleanBotExtras(input)
+        if (Object.hasOwn(patch, 'messageMode')) {
+          // 先冻结旧续跑再改模式；快速切回 steer 也不会复活旧目标消息。
+          await pauseForMode(bot, { ...record(bot.extras), ...patch }, rt.state.extras?.defaults)
+          checkWrite()
+          if (rt.botOf(id) !== bot) throw failure('bot/not-found', 'Unknown Bot')
+        }
         const previous = bot.extras
-        const next = { ...record(previous), ...cleanBotExtras(patch) }
+        const next = { ...record(previous), ...patch }
         bot.extras = next
         try { await rt.save({ required: true }) } catch (error) {
           if (bot.extras === next) {
@@ -32,6 +49,11 @@ export function install(rt) {
       }
       if (endpoint === 'extra-defaults-set') {
         const patch = cleanDefaults(body)
+        if (Object.hasOwn(patch, 'messageMode')) {
+          const defaults = { ...record(rt.state.extras?.defaults), ...patch }
+          await Promise.all(Object.values(rt.state.bots ?? {}).map(bot => pauseForMode(bot, bot.extras, defaults)))
+          checkWrite()
+        }
         const previous = rt.state.extras
         const next = { ...record(previous), defaults: { ...record(previous?.defaults), ...patch } }
         rt.state.extras = next
@@ -85,7 +107,7 @@ export function install(rt) {
         throw error
       } finally { authorizationPending = false }
       return rt.extraView()
-    })
+    }).finally(() => modeChanges.clear())
     writing = run.catch(() => {})
     return run
   }

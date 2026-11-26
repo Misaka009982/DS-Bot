@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { install } from '../src/host/extras/private-goal.js'
+import { install as installSettings } from '../src/host/extras/write-settings.js'
 import { fakeContext } from './fake-ctx.js'
 
 function setup(t, saved) {
   const ctx = fakeContext()
-  const bot = { id: 'b', name: 'Writer', sessionId: 's', extras: saved ? { goal: saved } : {}, tasks: [] }
+  const bot = { id: 'b', name: 'Writer', sessionId: 's', extras: { messageMode: 'steer', ...(saved ? { goal: saved } : {}) }, tasks: [] }
   const other = { id: 'other', name: 'Other', sessionId: 'other' }
   const sent = []
   const agents = new Map()
@@ -38,6 +39,8 @@ function setup(t, saved) {
     waitsForApproval: () => approval, runningJobs: () => jobs, hasSubagents: () => false,
     isSwitchingPart: () => false, isHandingOff: () => false, warn: () => {}, addTeamTool: tool => tools.push(tool),
   }
+  rt.extraView = () => rt.state.extras
+  installSettings(rt)
   install(rt)
   t.after(() => ctx.dispose())
   const goal = () => rt.extraGoalView(bot)
@@ -64,6 +67,86 @@ function setup(t, saved) {
     readonly: value => { readonly = value }, failSave: value => { failSave = value }, resolve: action => { beforeResolve = action },
     approval: value => { approval = value }, jobs: value => { jobs = value } }
 }
+
+test('目标只允许显式或继承的 steer，queue 覆盖全局 steer，DSH 默认不推定为 steer', async t => {
+  for (const mode of [undefined, null, 'inherit', 'queue']) {
+    const s = setup(t); s.bot.extras.messageMode = mode
+    await assert.rejects(s.start(), { code: 'bot/refused' })
+    assert.equal(s.goal(), null)
+    await s.rt.extraGoalTick(); assert.equal(s.sent.length, 0)
+  }
+  const s = setup(t); s.bot.extras.messageMode = null
+  s.rt.state.extras = { defaults: { messageMode: 'steer' } }
+  await s.start(); await s.rt.extraGoalTick(); assert.equal(s.sent.length, 1)
+  await s.control('pause'); s.bot.extras.messageMode = 'queue'
+  await assert.rejects(s.control('resume'), { code: 'bot/refused' })
+  assert.equal(s.goal().status, 'paused')
+})
+
+test('切到 queue 立即暂停并清除目标消息，切回 steer 不自行恢复', async t => {
+  const s = setup(t); await s.start(); await s.rt.extraGoalTick()
+  const old = s.sent[0].message
+  const user = { id: 'user', source: { kind: 'user' } }
+  s.agents.get('s').inbox.nextTurn.push(user)
+  await s.rt.extraSettings('extra-bot-set', { id: 'b', messageMode: 'queue' })
+  assert.equal(s.goal().status, 'paused'); assert.deepEqual(s.agents.get('s').inbox.nextTurn, [user])
+  assert.equal(s.rt.extraGoalRejectStep({ agent: s.agents.get('s'), messages: [old] }), true)
+  await s.rt.extraSettings('extra-bot-set', { id: 'b', messageMode: 'steer' })
+  await s.rt.extraGoalTick(); assert.equal(s.goal().status, 'paused'); assert.equal(s.sent.length, 1)
+})
+
+test('基础设置离开 steer 只暂停跟随者，Bot 显式 steer 继续可用', async t => {
+  const inherited = setup(t); inherited.bot.extras.messageMode = null
+  await inherited.rt.extraSettings('extra-defaults-set', { messageMode: 'steer' })
+  await inherited.start()
+  await inherited.rt.extraSettings('extra-defaults-set', { messageMode: 'queue' })
+  assert.equal(inherited.goal().status, 'paused')
+  const explicit = setup(t); await explicit.start()
+  await explicit.rt.extraSettings('extra-defaults-set', { messageMode: 'queue' })
+  assert.equal(explicit.goal().status, 'active')
+  await explicit.rt.extraGoalTick(); assert.equal(explicit.sent.length, 1)
+})
+
+test('解析 Agent 期间切换模式阻止迟到续跑，落盘失败仍保持冻结', async t => {
+  const s = setup(t); await s.start()
+  let release, entered
+  const inside = new Promise(resolve => { entered = resolve })
+  const wait = new Promise(resolve => { release = resolve })
+  s.resolve(async () => { entered(); await wait })
+  const tick = s.rt.extraGoalTick(); await inside
+  const change = s.rt.extraSettings('extra-bot-set', { id: 'b', messageMode: 'queue' })
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  release(); await tick; await change
+  assert.equal(s.sent.length, 0); assert.equal(s.goal().status, 'paused')
+  const failed = setup(t); await failed.start(); failed.failSave(true)
+  await assert.rejects(failed.rt.extraSettings('extra-bot-set', { id: 'b', messageMode: 'queue' }), /磁盘写入失败/)
+  await failed.rt.extraGoalTick(); assert.equal(failed.sent.length, 0)
+})
+
+test('基础方式切换等待保存期间，其他跟随 Bot 不能并发启动新目标', async t => {
+  const s = setup(t); s.bot.extras.messageMode = null
+  s.rt.state.extras = { defaults: { messageMode: 'steer' } }
+  await s.start()
+  let release, entered
+  const inside = new Promise(resolve => { entered = resolve })
+  const wait = new Promise(resolve => { release = resolve })
+  s.rt.save = async () => { entered(); await wait }
+  const change = s.rt.extraSettings('extra-defaults-set', { messageMode: 'queue' })
+  await inside
+  const rejected = assert.rejects(s.rt.extraGoalControl({ botId: 'other', sessionId: 'other', action: 'start', objective: '整理文档', acceptance: '文档可核查' }), { code: 'bot/refused' })
+  release(); await change; await rejected
+  await s.rt.extraSettings('extra-defaults-set', { messageMode: 'steer' })
+  assert.equal(s.rt.extraGoalView(s.rt.botOf('other')), null)
+  assert.equal(s.goal().status, 'paused')
+})
+
+test('运行时发现非 steer 的遗留 active 目标会暂停，不写进展或投递续跑', async t => {
+  const s = setup(t); await s.start(); s.bot.extras.messageMode = 'queue'
+  assert.equal(s.goal().status, 'paused')
+  await assert.rejects(s.update('progress', { progress: '进展', evidence: '证据' }), { code: 'bot/refused' })
+  await s.rt.extraGoalTick()
+  assert.equal(s.bot.extras.goal.status, 'paused'); assert.equal(s.sent.length, 0)
+})
 
 test('普通私聊不自动启动目标；显式启动后部分汇报结束会继续而不标记完成', async t => {
   const s = setup(t)

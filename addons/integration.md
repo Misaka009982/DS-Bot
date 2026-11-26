@@ -36,7 +36,7 @@
 | --- | --- |
 | `ds-bot/index.js` | 安装一个 `extras` 模块，保留上游模块顺序 |
 | `host/turns.js` | 在上游已有的 prompt 适配处传入新请求模式；结算后通知私聊目标，停止入口冻结后续目标续跑；阻塞绑定失败会话／轮次／事件，同来源后续成功才清理并记录 recovery，不修改 DSH |
-| `host/bot-tasks.js` | 显式 queue／steer 或活跃私聊目标保留前台会话，不自动挪为新后台任务 |
+| `host/bot-tasks.js` | 显式 queue／steer 保留前台会话，不自动挪为新后台任务；目标只在有效 steer 下运行，沿用该路径 |
 | `host/channel.js` | 增补状态、端点分发、已认证调用上下文、传递 send.mode |
 | `host/phone.js` | 从真实配对记录验权，传递消息／资源授权上下文，设备列表显示独立读写授权；`phone-set.serverName` 保存服务器扫码名称，二维码与浏览器链接只变显示名，原身份／授权不变 |
 | `host/remote.js` | Gateway 不得冒充已配对设备，不得修改电脑授权 |
@@ -79,7 +79,7 @@ PTY 与工作区已注册有限端点，只有公开服务存在时声明相应�
 
 服务器扫码名称复用仅电脑本机可调用的 `phone-set`，不新增远程端点。可选 `serverName` 保存在现有 `phone.json`；空值删除覆盖并回退 `hostname()`，读取视图始终提供字符串 `phone.serverName`，旧服务器没有该字段时隐藏编辑入口。上限沿用配对／握手的 64 个 UTF-16 代码单元；名称不参与身份或授权判断，不更新手机已保存的名称。名称保存失败恢复原内存值，已有二维码只更新名称而不另开配对窗口或延长有效期。
 
-私聊目标由 `extra-goal-control` 按目标编号、当前会话和 revision 修改，目标保存在 `bot.extras.goal`，通过 `extras.privateGoal.schema:1` 宣告入口。正常换段保留；停止、手动新建与重启暂停；只有有待续跑事项且当前私聊不存在其他待处理工作时才追加目标提示。`bot_goal` 只能更新当前私聊已有目标，不能替用户开启或恢复。具体状态、并发保护和验收见 [private-goal.md](private-goal.md)。
+私聊目标由 `extra-goal-control` 按目标编号、当前会话和 revision 修改，目标保存在 `bot.extras.goal`，通过 `extras.privateGoal.schema:1` 宣告入口。只有 Bot 显式 `steer` 或跟随基础 `steer` 才能启动、恢复和续跑；切离 `steer` 先冻结并暂停，切回后手动恢复。模式变更期间也拒绝并发启动，避免旧模式检查通过后在新模式中投递。正常换段保留；停止、手动新建与重启暂停；只有有待续跑事项且当前私聊不存在其他待处理工作时才追加目标提示。`bot_goal` 只能更新当前私聊已有目标，不能替用户开启或恢复。具体状态、并发保护和验收见 [private-goal.md](private-goal.md)。
 
 资源读取续轮补齐三处契约：工具列表按实际调用序号消除重复事件、结果按调用区间关联，真实参数中的短说明仅在密钥保护就绪时脱敏投影；内部协作只为原交换账本中仍可核对且非私密的 Bot 对附加 `exchange`；工作区声明 `readOnlyPreview:true`，`extra-workspace-read` 的可选 `readOnly:true` 不分配编辑回执。终端关闭同时等待输出排空和 `done`，避免关闭回包缺少迟到退出事实。
 

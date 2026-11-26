@@ -28,7 +28,7 @@ function setup({ supported = true, readonly = false, save = async () => ({}) } =
   const module = { exports: {} }
   runInNewContext(outputFiles[0].text, { module, exports: module.exports, require: () => react })
   const requests = [], runs = [], errors = []
-  const bot = { id: 'b', sessionId: 's', extras: {} }
+  const bot = { id: 'b', sessionId: 's', extras: { messageMode: 'steer' } }
   const roster = { readOnly: readonly ? '只读' : null, extras: supported ? { privateGoal: { schema: 1 } } : {} }
   const actions = { extraGoalControl: body => { requests.push(JSON.parse(JSON.stringify(body))); return save(body) } }
   const render = () => {
@@ -59,6 +59,22 @@ test('旧服务器不显示目标，空值及只读状态不能启动', () => {
   assert.ok(nodes(locked.render(), 'textarea').every(node => node.props.disabled))
   button(locked, '启动目标').props.onClick()
   assert.equal(locked.requests.length, 0)
+})
+
+test('非 steer 时启动和恢复被禁用，继承基础 steer 可用且独立 queue 优先', () => {
+  const ui = setup(); enter(ui, '目标', '整理资料'); enter(ui, '验收标准', '资料有来源')
+  ui.bot.extras.messageMode = 'queue'
+  assert.equal(button(ui, '启动目标').props.disabled, true)
+  button(ui, '启动目标').props.onClick(); assert.equal(ui.requests.length, 0)
+  ui.bot.extras.messageMode = null
+  assert.equal(button(ui, '启动目标').props.disabled, true)
+  ui.roster.extras.defaults = { schema: 1, messageMode: 'steer' }
+  assert.equal(button(ui, '启动目标').props.disabled, false)
+  ui.bot.extras.messageMode = 'queue'
+  ui.bot.extras.goal = { ...currentGoal(), status: 'paused' }
+  assert.equal(button(ui, '恢复目标').props.disabled, true)
+  button(ui, '恢复目标').props.onClick(); assert.equal(ui.requests.length, 0)
+  assert.equal(button(ui, '终止目标').props.disabled, false)
 })
 
 test('启动绑定当前 Bot 和会话，保存中拒绝重复点击且失败保留输入', async () => {

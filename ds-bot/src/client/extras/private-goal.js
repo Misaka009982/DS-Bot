@@ -12,9 +12,10 @@ export function PrivateGoal({ bot, roster, actions, run, Card }) {
   if (roster.extras?.privateGoal?.schema !== 1 || typeof actions.extraGoalControl !== 'function') return null
   const goal = bot.extras?.goal
   const live = goal && !['complete', 'stopped'].includes(goal.status)
+  const canRun = bot.extras?.messageMode === 'steer' || !['queue', 'steer'].includes(bot.extras?.messageMode) && roster.extras?.defaults?.messageMode === 'steer'
   const disabled = busy || Boolean(roster.readOnly)
   const submit = (action, patch = {}) => {
-    if (saving.current || roster.readOnly) return
+    if (saving.current || roster.readOnly || ['start', 'resume'].includes(action) && !canRun) return
     saving.current = true
     setBusy(true)
     void run(Promise.resolve().then(() => actions.extraGoalControl({
@@ -30,7 +31,8 @@ export function PrivateGoal({ bot, roster, actions, run, Card }) {
     h('textarea', { className: 'bt-input bt-bs-area', value, maxLength: 4000, disabled, 'aria-label': label, onChange: event => onChange(event.target.value) }))
   return h(Card, { title: '私聊目标模式' },
     h('div', { className: 'bt-set-row bt-bs-row' }, h('span', { className: 'bt-set-hint' },
-      '为当前长任务设定目标和验收标准。阶段汇报后自动继续；遇到审批、问题卡片、后台工作或错误时等待。暂停／终止只停止后续自动推进，当前轮次可用聊天停止按钮结束。')),
+      '仅在消息发送方式为 steer 时启用，包括跟随基础设置的 steer。设定目标和验收标准后，阶段汇报会继续推进；审批、问题卡片、后台工作或错误会等待。切换 queue 或 DSH 默认后暂停，切回 steer 需手动恢复。暂停／终止只停止后续自动推进，当前轮次可用聊天停止按钮结束。')),
+    !canRun ? h('p', { className: 'bt-set-hint', role: 'status' }, '请先将消息发送方式设为 steer，或跟随基础设置中的 steer，才能启动或恢复目标。') : null,
     goal ? h('div', { className: 'bt-set-row bt-bs-row bt-bs-stack', role: 'status' },
       h('strong', null, labels[goal.status] ?? goal.status),
       h('span', { style: { whiteSpace: 'pre-wrap' } }, goal.objective),
@@ -41,12 +43,12 @@ export function PrivateGoal({ bot, roster, actions, run, Card }) {
     !live || editing ? h('div', null,
       field('目标', objective, setObjective), field('验收标准', acceptance, setAcceptance),
       h('div', { className: 'bt-set-row bt-bs-row' },
-        h('button', { type: 'button', className: 'bt-soft', disabled: disabled || !objective.trim() || !acceptance.trim(), onClick: () => submit(editing ? 'revise' : 'start', { ...(editing ? { goalId: editing.id, revision: editing.revision } : {}), objective, acceptance }) }, editing ? '保存目标调整' : '启动目标'),
+        h('button', { type: 'button', className: 'bt-soft', disabled: disabled || !editing && !canRun || !objective.trim() || !acceptance.trim(), onClick: () => submit(editing ? 'revise' : 'start', { ...(editing ? { goalId: editing.id, revision: editing.revision } : {}), objective, acceptance }) }, editing ? '保存目标调整' : '启动目标'),
         editing ? h('button', { type: 'button', className: 'bt-soft', disabled, onClick: () => setEditing(false) }, '取消') : null)) : null,
     live ? h('div', { className: 'bt-set-row bt-bs-row' },
       goal.status === 'active'
         ? h('button', { type: 'button', className: 'bt-soft', disabled, onClick: () => submit('pause') }, '暂停自动推进')
-        : h('button', { type: 'button', className: 'bt-soft', disabled, onClick: () => submit('resume') }, '恢复目标'),
+        : h('button', { type: 'button', className: 'bt-soft', disabled: disabled || !canRun, onClick: () => submit('resume') }, '恢复目标'),
       h('button', { type: 'button', className: 'bt-soft', disabled, onClick: () => { setObjective(goal.objective); setAcceptance(goal.acceptance); setEditing({ id: goal.id, revision: goal.revision }) } }, '调整目标'),
       h('button', { type: 'button', className: 'bt-soft', disabled, onClick: () => confirmStop === goal.id ? submit('stop') : setConfirmStop(goal.id) }, confirmStop === goal.id ? '确认终止目标' : '终止目标')) : null)
 }
