@@ -169,6 +169,7 @@ test('apply registers listeners and effects in a fixed order', (t) => {
     'effect ds-bot: 私聊目标提示',
     'prompt bot-private-goal 650',
     'effect ds-bot: 私聊目标续跑',
+    'effect ds-bot: 聊天附件上传',
   ])
 })
 

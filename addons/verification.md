@@ -18,6 +18,8 @@
 
 新增 `extra-attachments.test.js` 覆盖字节保真、幂等、边界、会话迁移、撤权、服务更换及未知回执；`mobile.test.js` 覆盖真实 `sendUser` 接线，`phone.test.js` 通过真实加密配对覆盖浏览器设备的分片归属且本机入口不能读取远程设备回执。新旧图片路径分别保留。本机只做语法、编码、引用、清单锚点与差异检查；类型／测试／lint／打包交给对应提交的 CI，未在真实宿主发送文件。
 
+首轮增补 CI [45958428902](https://github.com/Misaka009982/DS-Bot/actions/runs/45958428902) 的插件回归为4117通过、1失败、3跳过；唯一失败是 `install.test.js` 的严格注册顺序清单未包含新附件清理任务。补齐该固定项，保留全部顺序断言，运行源码不变；最终验证以后续提交的 CI 为准。
+
 ## 主 Bot 管理工具的会话隔离（1.2.1）
 
 已核对上游 [#2107](https://github.com/Fei-Craft/DS-Bot/issues/2107) 的维护者结论及修复 [#2070](https://github.com/Fei-Craft/DS-Bot/pull/2070)、[#2123](https://github.com/Fei-Craft/DS-Bot/pull/2123)。固定 0.3.10 基线的 `filterBotAssembly` 在每个 Agent 注册过滤器，却未按请求核对会话；普通 Bot 的过滤器会从主 Bot 请求中删除整个 `team-admin`，包括增补的 `pause_bot`、`new_bot_session`。启动加载会重建当前会话到稳定 Bot ID 的索引，不能仅凭会话换段认定主角色丢失；`bot.packs` 也不能覆盖内置包规则。
