@@ -587,6 +587,8 @@ test('a bare Server host means the link path; a dead Server shows why', async (t
 })
 
 test('paired browsers cannot see or answer Classic Agent approvals in state, live events, or approval-answer, while paired phones can', async (t) => {
+  // 本组独立注册三台设备，不与其他回归共用默认每小时注册计数。
+  const approvalRelay = await startRelayServer()
   const home = mkdtempSync(join(tmpdir(), 'dsb-browser-approvals-'))
   const ctx = fakeContext()
   let tap
@@ -614,8 +616,8 @@ test('paired browsers cannot see or answer Classic Agent approvals in state, liv
     }
     return { ok: true, value: null }
   })
-  t.after(async () => { await ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
-  await rt.phoneEndpoint('phone-set', { server: server.url, on: true })
+  t.after(async () => { await ctx.dispose(); await approvalRelay.close(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await rt.phoneEndpoint('phone-set', { server: approvalRelay.url, on: true })
   await until(async () => rt.phoneView(), view => view.status === 'online')
 
   const pair1 = await rt.phoneEndpoint('phone-pair', {})
