@@ -187,6 +187,7 @@ test('资源读写授权经过真实加密配对和端点上下文，远程不�
     fs: { resolve() {}, stat() {}, lstat() {}, contains() {}, processPath() {}, processPathFromHostPath() {}, readBytes() {}, listDir() {}, writeText() {} },
     sessionQuery: { observeSession() { assert.fail('空终端列表无需读取会话正文') } },
     subprocess: { spawnTerminal() { assert.fail('只读请求不能创建终端') }, terminalEnvironment() {}, resolveExecutable() {} },
+    fileUploads: { uploadStream() { assert.fail('暂存分片不提前领取回执') }, uploadImageStream() { assert.fail('暂存分片不提前领取回执') } },
   }
   const desk = open(home, services)
   t.after(async () => { await desk.ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
@@ -197,6 +198,13 @@ test('资源读写授权经过真实加密配对和端点上下文，远程不�
   const remote = phone(offer, { pairingCode: offer.code, name: 'resource-reader' })
   await remote.client.connect()
   const entry = (await desk.call('state', {})).value.phone.phones[0]
+  const attachments = (endpoint, payload) => remote.client.rpc('bot', { endpoint, payload })
+  const opened = await attachments('extra-attachment-open', { requestId: 'paired-files', scope: { kind: 'bot', botId: 'm1' }, sessionId: 'm1', files: [{ name: 'file.txt', size: 3, kind: 'file', mime: 'text/plain' }] })
+  assert.equal(opened.ok, true)
+  assert.deepEqual((await attachments('extra-attachment-chunk', { requestId: 'paired-files', index: 0, offset: 0, data: 'YWJj' })).value.received, [3])
+  assert.equal((await attachments('extra-attachment-status', { requestId: 'paired-files' })).value.status, 'uploading')
+  assert.equal((await desk.call('extra-attachment-status', { requestId: 'paired-files' })).error.code, 'bot/stale')
+  assert.equal((await attachments('extra-attachment-discard', { requestId: 'paired-files' })).value.status, 'discarded')
   const list = () => remote.client.rpc('bot', { endpoint: 'extra-terminal-list', payload: { scope: { kind: 'bot', botId: 'm1' }, sessionId: 'm1' } })
   const change = () => remote.client.rpc('bot', { endpoint: 'extra-tool-change', payload: { sessionId: 'm1', callId: 'absent', callSeq: 0 } })
   assert.equal((await change()).error.code, 'bot/refused')

@@ -354,6 +354,32 @@ test('stop-chat ends a Bot own-chat turn, and answers false when nothing runs', 
   await stop()
 })
 
+test('普通文件经过聊天上传端点及真实发送入口，以最终会话回执提交', async t => {
+  const { ctx, rt, call, sent, stop } = start(); t.after(stop)
+  const { chief } = await team(call)
+  const uploaded = []
+  const upload = async request => {
+    const parts = []; for await (const part of request.data) parts.push(part)
+    uploaded.push({ sessionId: request.sessionId, name: request.name, bytes: Buffer.concat(parts).toString() })
+    return { receiptId: `receipt-${uploaded.length}` }
+  }
+  // 使用固定夹具服务；代理身份的覆盖由专门的资源回归负责。
+  const uploads = { uploadStream: upload, uploadImageStream: upload }
+  const get = ctx.get; ctx.get = name => name === 'fileUploads' ? uploads : get(name)
+  const sessionId = rt.chatOf(chief)
+  assert.equal((await call('extra-attachment-open', { requestId: 'file-once', scope: { kind: 'bot', botId: chief }, sessionId,
+    files: [{ name: 'hello.txt', size: 3, kind: 'file', mime: 'text/plain' }] })).ok, true)
+  assert.equal((await call('extra-attachment-chunk', { requestId: 'file-once', index: 0, offset: 0, data: 'YWJj' })).ok, true)
+  const before = sent.length
+  const result = await call('extra-attachment-send', { requestId: 'file-once', text: '' })
+  assert.equal(result.ok, true); assert.equal(result.value.status, 'sent')
+  const prompt = sent.slice(before).find(entry => entry.prompt !== undefined).prompt
+  assert.deepEqual(prompt.content, [{ type: 'file', receiptId: 'receipt-1' }])
+  assert.deepEqual(uploaded, [{ sessionId: prompt.sessionId, name: 'hello.txt', bytes: 'abc' }])
+  await call('extra-attachment-send', { requestId: 'file-once', text: '' })
+  assert.equal(sent.slice(before).filter(entry => entry.prompt !== undefined).length, 1)
+})
+
 test('a phone stages photos one by one, then send puts them in one message with the text', async () => {
   const { call, sent, stop } = start()
   const { chief } = await team(call)

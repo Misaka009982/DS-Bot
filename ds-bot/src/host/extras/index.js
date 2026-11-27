@@ -13,12 +13,13 @@ import { install as installWorkspace } from './workspace.js'
 import { install as installTerminals } from './terminals.js'
 import { install as installToolChanges } from './tool-changes.js'
 import { install as installPrivateGoal } from './private-goal.js'
+import { ATTACHMENT_READS, ATTACHMENT_WRITES, install as installAttachments } from './attachments.js'
 import { RESOURCE_READS, RESOURCE_WRITES, RESOURCE_PERMISSIONS, resourceAllowed, resourceGrant } from './resources.js'
 
 const DELEGATION_READS = new Set(['extra-delegation-list', 'extra-delegation-read'])
 const MESSAGE_READS = new Set(['extra-tool-change'])
-const READS = new Set(['extra-status', 'extra-tool-detail', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read', ...DELEGATION_READS, ...MESSAGE_READS, ...RESOURCE_READS.keys()])
-export const EXTRA_ENDPOINTS = new Set([...READS, ...RESOURCE_WRITES.keys(), 'extra-bot-set', 'extra-defaults-set', 'phone-extra-set', 'extra-new-session', 'extra-goal-control'])
+const READS = new Set(['extra-status', 'extra-tool-detail', 'extra-tool-list', 'extra-todos', 'extra-messages', 'extra-task-read', ...DELEGATION_READS, ...MESSAGE_READS, ...ATTACHMENT_READS, ...RESOURCE_READS.keys()])
+export const EXTRA_ENDPOINTS = new Set([...READS, ...ATTACHMENT_WRITES, ...RESOURCE_WRITES.keys(), 'extra-bot-set', 'extra-defaults-set', 'phone-extra-set', 'extra-new-session', 'extra-goal-control'])
 const failure = (code, message) => Object.assign(new Error(message), { code })
 
 export function install(rt) {
@@ -35,6 +36,7 @@ export function install(rt) {
   installTerminals(rt)
   installToolChanges(rt)
   installPrivateGoal(rt)
+  installAttachments(rt)
   rt.extraResourceAccess = device => rt.extraAuthorizationPending?.() === true ? undefined : resourceGrant(rt.state.extras, device)
   rt.extraResourcePermissions = device => Object.fromEntries(RESOURCE_PERMISSIONS.map(key => [key, resourceAllowed(rt.extraResourceAccess(device), key)]))
   const resourceView = grant => {
@@ -85,7 +87,7 @@ export function install(rt) {
   rt.extraView = () => ({ schema: 1, baseline: '0.3.10', newSession: true, privateGoal: { schema: 1 }, remotePermissions: rt.state.extras?.remotePermissions === true,
     defaults: { schema: 1, messageMode: ['queue', 'steer'].includes(rt.state.extras?.defaults?.messageMode) ? rt.state.extras.defaults.messageMode : 'inherit',
       autoArchive: rt.state.extras?.defaults?.autoArchive === true },
-    fullMessages: true, toolChanges: { schema: 1, read: true }, archive: rt.extraArchiveStatus?.() ?? null, ...delegationView(true), ...resourceView(true) })
+    fullMessages: true, ...(rt.extraAttachmentsView() ? { attachments: rt.extraAttachmentsView() } : {}), toolChanges: { schema: 1, read: true }, archive: rt.extraArchiveStatus?.() ?? null, ...delegationView(true), ...resourceView(true) })
   rt.isExtraRead = endpoint => READS.has(endpoint)
   rt.isExtraEndpoint = endpoint => EXTRA_ENDPOINTS.has(endpoint)
 
@@ -99,6 +101,7 @@ export function install(rt) {
       if (denial !== undefined) throw failure(denial.code, denial.message)
     }
     check()
+    if (ATTACHMENT_READS.has(endpoint) || ATTACHMENT_WRITES.has(endpoint)) return rt.extraAttachment(endpoint, body, signal, caller, check)
     if (endpoint === 'extra-new-session') return rt.extraNewSession(body, check)
     if (endpoint === 'extra-goal-control') return rt.extraGoalControl(body, check)
     if (RESOURCE_READS.has(endpoint) || RESOURCE_WRITES.has(endpoint)) {

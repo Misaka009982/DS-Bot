@@ -10,6 +10,14 @@
 
 源码修复提交 `b64637df` 已通过增补构建 [45807525998](https://github.com/Misaka009982/DS-Bot/actions/runs/45807525998) 的原版／增补独立验证与打包；综合构建 [45807460892](https://github.com/Misaka009982/DS-Bot/actions/runs/45807460892) 的泄漏扫描、Linux Node 22／24、Windows Node 24、lint／浏览器、手机类型／单元、link／Relay、桌面和 Docker 作业均已通过。iOS 模拟器作业被取消，不计为通过。历史 1.1.0 发布源码为 `281a7b4f`，其发布验证及打包见 [45810998531](https://github.com/Misaka009982/DS-Bot/actions/runs/45810998531)。本次 1.2.0 包含下面列出的行为修改，必须使用新提交的 CI 结果，不能沿用旧版成功记录。
 
+## 聊天附件上传与发送（1.2.2）
+
+用户反馈 Deck 无法发送本地文件。固定 `app/ui` 的输入框没有 file input，原 `ComposerPlus` 因此隐藏“添加文件”；远程 API 的 `stage-image`／`send` 也只接图片编号，普通文件没有上传通路。用户已明确授权同时补 Deck 与 DS-Bot。本轮不修改 DSH 或用户数据，协议见 [attachments.md](attachments.md)。
+
+服务端新增有界分片暂存和设备／当前 Bot 或群会话绑定；发送复用 `sendUser`，正常前台交接确定最终 Session 后才调用公开 `fileUploads.uploadStream`／`uploadImageStream`，并在 prompt 前复核授权与服务身份。重复分片和重复发送不重复入队；提交前失败明确未发送，prompt 调用后异常保留未知结果，只查询原回执。用户文件历史投影只增加文件名和字节数。
+
+新增 `extra-attachments.test.js` 覆盖字节保真、幂等、边界、会话迁移、撤权、服务更换及未知回执；`mobile.test.js` 覆盖真实 `sendUser` 接线，`phone.test.js` 通过真实加密配对覆盖浏览器设备的分片归属且本机入口不能读取远程设备回执。新旧图片路径分别保留。本机只做语法、编码、引用、清单锚点与差异检查；类型／测试／lint／打包交给对应提交的 CI，未在真实宿主发送文件。
+
 ## 主 Bot 管理工具的会话隔离（1.2.1）
 
 已核对上游 [#2107](https://github.com/Fei-Craft/DS-Bot/issues/2107) 的维护者结论及修复 [#2070](https://github.com/Fei-Craft/DS-Bot/pull/2070)、[#2123](https://github.com/Fei-Craft/DS-Bot/pull/2123)。固定 0.3.10 基线的 `filterBotAssembly` 在每个 Agent 注册过滤器，却未按请求核对会话；普通 Bot 的过滤器会从主 Bot 请求中删除整个 `team-admin`，包括增补的 `pause_bot`、`new_bot_session`。启动加载会重建当前会话到稳定 Bot ID 的索引，不能仅凭会话换段认定主角色丢失；`bot.packs` 也不能覆盖内置包规则。

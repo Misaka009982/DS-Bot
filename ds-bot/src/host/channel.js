@@ -926,7 +926,7 @@ export function install(rt) {
     return undefined
   }
 
-  async function sendUser({ sessionId: ref, content, requestId = randomUUID(), mode: requestedMode }) {
+  async function sendUser({ sessionId: ref, content, requestId = randomUUID(), mode: requestedMode, prepareContent }) {
     const past = rt.pastOwners.get(ref)
     const room = rt.roomOf(ref)
     let sessionId = ownThreadTarget(ref, past)
@@ -941,11 +941,14 @@ export function install(rt) {
       }
     }
     await rt.ensureCapabilities(sessionId)
+    // 文件回执属于最终接收会话；正常前台换段完成后才准备，提交前再次核对授权。
+    const prepared = prepareContent === undefined ? undefined : await prepareContent(sessionId)
+    prepared?.beforePrompt()
     await ctx.sessionController.prompt({
       requestId,
       sessionId,
       mode,
-      content,
+      content: prepared?.content ?? content,
     }, AbortSignal.timeout(30_000))
   }
 

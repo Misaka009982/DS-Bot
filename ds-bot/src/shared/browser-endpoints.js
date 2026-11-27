@@ -11,6 +11,7 @@ export const BROWSER_ALLOWED = new Set([
   // Chat, group chat, attachments, cards, and safe pending-request cancellations
   'chat', 'room-chat', 'send', 'stage-image', 'image', 'markdown-image',
   'file-text', 'file-download', 'stop-chat', 'stop-room-work',
+  'extra-attachment-open', 'extra-attachment-chunk', 'extra-attachment-send', 'extra-attachment-status', 'extra-attachment-discard',
   'answer-question', 'dismiss-question', 'view-reply', 'dismiss-view',
   'approval-answer', 'btw-delete', 'secret-cancel', 'connector-request-cancel',
   // Bot background tasks

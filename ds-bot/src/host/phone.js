@@ -109,6 +109,7 @@ export function install(rt) {
     const answer = await serve(endpoint, params?.payload ?? null, signal, { authorize,
       fullMessages: () => rt.extraFullMessagesAllowed?.(deviceOf()) === true,
       deviceKind: () => deviceOf()?.kind,
+      attachmentOwner: deviceOf,
       resources: () => rt.extraResourceAccess?.(deviceOf()),
     })
     const result = endpoint === 'state' && answer?.ok === true ? { ...answer, value: remoteView(answer.value) } : answer
