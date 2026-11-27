@@ -71,9 +71,10 @@ export function install(rt) {
       let patch
       if (keys.every(key => key === 'remotePermissions') && typeof body.remotePermissions === 'boolean') {
         patch = { remotePermissions: body.remotePermissions }
-      } else if (keys.every(key => ['deviceId', 'pairedAt', 'fullMessages', 'resources'].includes(key)) && typeof body.deviceId === 'string'
-        && (typeof body.fullMessages === 'boolean' || body.resources !== undefined)
-        && (body.fullMessages === undefined || typeof body.fullMessages === 'boolean')) {
+      } else if (keys.every(key => ['deviceId', 'pairedAt', 'fullMessages', 'learningApproval', 'resources'].includes(key)) && typeof body.deviceId === 'string'
+        && (typeof body.fullMessages === 'boolean' || typeof body.learningApproval === 'boolean' || body.resources !== undefined)
+        && (body.fullMessages === undefined || typeof body.fullMessages === 'boolean')
+        && (body.learningApproval === undefined || typeof body.learningApproval === 'boolean')) {
         const devices = rt.extraPairedDevices?.() ?? []
         const device = devices.find(entry => entry.deviceId === body.deviceId)
         if (device === undefined || typeof body.pairedAt !== 'number' || device.pairedAt !== body.pairedAt) throw failure('bot/stale', 'The paired device changed. Refresh and authorize it again.')
@@ -82,7 +83,8 @@ export function install(rt) {
         const saved = Object.hasOwn(kept, device.deviceId) ? kept[device.deviceId] : undefined
         const previousGrant = saved?.identityKey === device.identityKey && saved?.pairedAt === device.pairedAt ? saved : {}
         const nextGrant = { ...previousGrant, identityKey: device.identityKey, pairedAt: device.pairedAt,
-          ...(body.fullMessages === undefined ? {} : { fullMessages: body.fullMessages }) }
+          ...(body.fullMessages === undefined ? {} : { fullMessages: body.fullMessages }),
+          ...(body.learningApproval === undefined ? {} : { learningApproval: body.learningApproval }) }
         if (body.resources !== undefined) {
           const resources = { ...record(previousGrant.resources), ...cleanResourceGrant(body.resources) }
           if (body.resources.terminalRead === false) resources.terminalWrite = false

@@ -7,7 +7,14 @@ export function fullMessagesAllowed(settings, device) {
   return grant?.fullMessages === true && grant.identityKey === device.identityKey && grant.pairedAt === device.pairedAt
 }
 
+export function learningApprovalAllowed(settings, device) {
+  if (device === undefined || !['phone', 'browser'].includes(device.kind)) return false
+  const grant = own(settings?.deviceAccess, device.deviceId)
+  return grant?.learningApproval === true && grant.identityKey === device.identityKey && grant.pairedAt === device.pairedAt
+}
+
 export function remoteExtras(view, settings, device) {
   if (view === null || typeof view !== 'object' || view.extras === undefined) return view
-  return { ...view, extras: { ...view.extras, fullMessages: fullMessagesAllowed(settings, device) } }
+  return { ...view, extras: { ...view.extras, fullMessages: fullMessagesAllowed(settings, device),
+    learningApproval: { schema: 1, allowed: learningApprovalAllowed(settings, device) } } }
 }

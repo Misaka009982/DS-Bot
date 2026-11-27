@@ -255,6 +255,26 @@ test('a failed work-folder check keeps an AGENTS proposal open', async t => {
   assert.equal((await runtime.call('learning-answer', { id: proposal.id, approve: true })).value.applied, true)
 })
 
+test('学习审批在异步目录检查后撤权，保留原文件和待处理提案', async t => {
+  const folder = projectFolder(t)
+  const seed = structuredClone(TEAM); seed.bots.b2.workDir = folder
+  const runtime = await startRuntime({ seed, replies: [noneReply, agentsEdit], config: { learningTimes: { tickMs: 100_000 } } })
+  t.after(() => runtime.stop())
+  await finishTurn(runtime.ctx); await runtime.rt.learningRun()
+  const proposal = (await runtime.call('state')).value.learning.b2[0]
+  const before = readFileSync(join(folder, 'AGENTS.md'), 'utf8')
+  let allowed = true
+  const workFolder = runtime.rt.workFolder
+  runtime.rt.workFolder = async path => { await workFolder(path); allowed = false }
+  const answer = await runtime.rt.channelCall('learning-answer', { id: proposal.id, approve: true }, undefined, {
+    remote: true, authorize: () => allowed ? undefined : { code: 'bot/refused', message: '设备审批权限已撤销' },
+  })
+  assert.equal(answer.ok, false); assert.equal(answer.error.code, 'bot/refused')
+  assert.equal(readFileSync(join(folder, 'AGENTS.md'), 'utf8'), before)
+  assert.equal((await runtime.call('state')).value.learning.b2[0].id, proposal.id)
+  assert.deepEqual(readdirSync(folder).filter(name => name.endsWith('.tmp')), [])
+})
+
 test('a Git folder without AGENTS.md can get a new file approved', async t => {
   const folder = projectFolder(t, { agents: null })
   const seed = JSON.parse(JSON.stringify(TEAM))

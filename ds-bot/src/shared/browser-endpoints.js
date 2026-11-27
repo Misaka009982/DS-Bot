@@ -9,11 +9,12 @@ export const BROWSER_ALLOWED = new Set([
   'usage', 'usage-summary', 'run-stats', 'update-check',
   'diagnostics', 'diagnostics-log', 'diagnostics-clear',
   // Chat, group chat, attachments, cards, and safe pending-request cancellations
-  'chat', 'room-chat', 'send', 'stage-image', 'image', 'markdown-image',
+  'chat', 'room-chat', 'send', 'stage-image', 'stage-file', 'image', 'markdown-image',
   'file-text', 'file-download', 'stop-chat', 'stop-room-work',
   'extra-attachment-open', 'extra-attachment-chunk', 'extra-attachment-send', 'extra-attachment-status', 'extra-attachment-discard',
   'answer-question', 'dismiss-question', 'view-reply', 'dismiss-view',
   'approval-answer', 'btw-delete', 'secret-cancel', 'connector-request-cancel',
+  'resume-work', 'cancel-work', 'resume-room-pause',
   // Bot background tasks
   'bot-stop-task',
   // 增补的只读消息／工具／待办接口；fullMessages 仍由电脑逐设备验权。

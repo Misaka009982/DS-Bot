@@ -30,6 +30,8 @@ const ZH = {
   'Applies to new messages. Steer is read at the next safe model/tool boundary; no ↑ click is needed.': '对新消息生效。插话在下一个安全的模型／工具边界处理，无需再点 ↑。',
   'Archive inactive sessions': '归档过期会话', 'Only ended background sessions and earlier parts inactive for over 24 hours. Keeps history; skips queues, approvals and running work.': '只归档最后活动超过 24 小时的已结束后台会话和旧段，保留历史；排队、审批及运行中的工作会跳过。',
   'Allow remote permission changes': '允许远程修改 Bot／群权限', 'Computer authorization only. The phone also needs its safety switch and a device unlock. Browser devices remain blocked.': '只能在电脑授权；手机还需开启防误触开关并解锁。浏览器权限设备仍不可修改。',
+  'Allow learning proposal approval': '允许审批学习提案',
+  'Allow this device to approve or decline skill and AGENTS.md proposals. Separate from full-message access.': '允许此设备批准或拒绝技能及 AGENTS.md 学习提案，与完整消息读取独立。',
   'Allow full messages': '允许查看完整消息', 'Includes internal Bot collaboration and redacted model failures. Does not allow more remote actions.': '包括 Bot 内部协作及脱敏后的模型失败详情，不会开放更多远程操作。',
   'Computer authorization required': '需要电脑授权', 'Permission safety switch': '远程权限防误触开关',
   "Each Bot's own permission": '跟随每个 Bot 自身权限', 'Permission changes need the phone app.': '修改权限需要原生手机应用。',

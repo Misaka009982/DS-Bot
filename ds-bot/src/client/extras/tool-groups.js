@@ -2,7 +2,7 @@ import { isRelayContext, stripToolCallTags, toolName } from '../text.js'
 import { stepActivity, turnReasoning } from '../turn-reasoning.js'
 import { thinkingShown } from '../themes.js'
 
-export const NATIVE_TOOL_EVENTS = new Set(['message_bot', 'stop_bot', 'create_bot', 'update_bot', 'group_relay', 'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'request_secret', 'request_connector', 'mail_send', 'ask_user_question', 'show_view', 'browser_handoff', 'read_group_chat', 'bot_remember', 'bot_forget', 'remember', 'forget'])
+export const NATIVE_TOOL_EVENTS = new Set(['message_bot', 'delegate_work', 'ask_back', 'answer_work', 'cancel_work', 'note_bot', 'stop_bot', 'create_bot', 'update_bot', 'group_relay', 'create_group', 'update_group', 'delete_group', 'post_to_group', 'ask_user', 'request_secret', 'request_connector', 'mail_send', 'ask_user_question', 'show_view', 'browser_handoff', 'computer_handoff', 'read_group_chat', 'bot_remember', 'bot_forget', 'remember', 'forget'])
 const special = root => NATIVE_TOOL_EVENTS.has(toolName(root)) || toolName(root) === 'cua' || toolName(root)?.startsWith('cua_driver_native__')
   || (root.subCalls ?? []).some(special)
 const empty = Object.freeze([])

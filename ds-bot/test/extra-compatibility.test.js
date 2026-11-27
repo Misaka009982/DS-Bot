@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs'
 const manifest = JSON.parse(readFileSync(new URL('../../addons/manifest.json', import.meta.url), 'utf8'))
 
 test('正式版固定基线和所有接入点可定位，不依赖滚动 dev', () => {
-  assert.equal(manifest.upstream.commit, 'd104d9ca18d69a35460f14e15dff4d553181433a')
-  assert.equal(manifest.upstream.version, '0.3.10')
+  assert.equal(manifest.upstream.commit, '7963e66a74f40d23daa288a76cdca72b34e39561')
+  assert.equal(manifest.upstream.version, '0.4.0')
   for (const hook of manifest.hooks) {
     const text = readFileSync(new URL(`../../${hook.path}`, import.meta.url), 'utf8')
     for (const anchor of [hook.anchor, ...(hook.anchors ?? [])]) {
@@ -23,7 +23,7 @@ test('普通主线 CI 仅为增补生成客户端，并在 Node 24／22 测试�
     assert.ok(section)
     const buildAt = section.indexOf('run: npm run build')
     assert.ok(buildAt >= 0)
-    assert.ok(buildAt < section.indexOf('run: npm test'))
+    assert.ok(buildAt < section.search(/\bnpm (?:run test:windows|test)\b/))
   }
 })
 
@@ -34,5 +34,5 @@ test('增补 Releases 不依赖 npm 账号，不申请 OIDC 发布权限', () =>
   assert.equal(workflow.includes('node addons/pack.mjs'), true)
   assert.equal(workflow.includes('gh release upload'), true)
   const upstream = readFileSync(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8')
-  assert.ok(upstream.includes("if: github.repository == 'Fei2411/DS-Bot' && !startsWith(github.event.release.tag_name, 'addons-v')"))
+  assert.ok(upstream.includes("if: github.repository == 'Fei-Craft/DS-Bot' && !startsWith(github.event.release.tag_name, 'addons-v')"))
 })

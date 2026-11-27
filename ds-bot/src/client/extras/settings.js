@@ -61,6 +61,21 @@ export function RemoteAuthorization({ roster, actions, run, Row, Switch }) {
       onChange: remotePermissions => { if (busy) return; setBusy(true); void run(actions.extraPhoneSet({ remotePermissions })).finally(() => setBusy(false)) } }))
 }
 
+export function DeviceLearning({ entry, actions, run, Switch, readOnly = false }) {
+  const [busy, setBusy] = useState(false)
+  const saving = useRef(false)
+  const label = text('Allow learning proposal approval')
+  return h('div', { className: 'bt-set-row', style: { gap: 12 } },
+    h('div', { className: 'bt-set-copy' }, h('span', null, label), h('span', { className: 'bt-set-hint' }, text('Allow this device to approve or decline skill and AGENTS.md proposals. Separate from full-message access.'))),
+    h(Switch, { label: `${entry.name || entry.kind} · ${label}`, on: entry.learningApproval === true, disabled: busy || readOnly,
+      onChange: learningApproval => {
+        if (saving.current || readOnly) return
+        saving.current = true; setBusy(true)
+        void run(Promise.resolve().then(() => actions.extraPhoneSet({ deviceId: entry.id, pairedAt: entry.pairedAt, learningApproval })))
+          .finally(() => { saving.current = false; setBusy(false) })
+      } }))
+}
+
 export function DeviceMessages({ entry, actions, run, Switch }) {
   const [busy, setBusy] = useState(false)
   return h('div', { className: 'bt-set-row', style: { gap: 12 } },

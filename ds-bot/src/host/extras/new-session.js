@@ -5,7 +5,7 @@ const queued = agent => [...agent.inbox.nextStep, ...agent.inbox.nextTurn]
 const referenceKeys = new Set(['sessionId', 'fromPart', 'toPart', 'targetSessionId', 'sourceSessionId', 'toId'])
 const references = (value, id) => value !== null && typeof value === 'object'
   && Object.entries(value).some(([key, entry]) => referenceKeys.has(key) && entry === id || references(entry, id))
-export const settingsKey = bot => JSON.stringify([bot.model, bot.appliedModel, bot.effort, bot.permission, bot.workDir])
+export const settingsKey = bot => JSON.stringify([bot.model, bot.appliedModel, bot.effort, bot.permission, bot.workDir, bot.agentPreset])
 const hasPendingWork = (rt, id) => rt.waitsForApproval?.(id) || rt.hasSubagents?.(id)
   || (rt.runningJobs?.(id)?.length ?? 0) > 0 || rt.state.questions[id] !== undefined
   || rt.state.views?.[id] !== undefined || references(rt.state.works, id) || references(rt.state.inflight, id)
@@ -64,7 +64,7 @@ export function install(rt) {
     const previousSegments = bot.segments
     let freshId
     try {
-      freshId = await rt.createSession(bot.name, { dir: rt.workDirOf({ botId: bot.id }) })
+      freshId = await rt.createSession(bot.name, { dir: rt.workDirOf({ botId: bot.id }), bot })
       check()
       const ref = await rt.desiredModel(bot)
       const oldRoute = agent.session.requestHeader()?.config

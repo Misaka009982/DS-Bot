@@ -31,20 +31,22 @@ function component(name, { supported = true, readOnly = false, save = () => Prom
   const requests = [], runs = [], errors = []
   const bot = { id: 'bot', extras: {} }
   const roster = { readOnly: readOnly ? '只读宿主' : null, extras: { schema: 1, ...(supported ? { defaults: { schema: 1, messageMode: 'steer', autoArchive: true } } : {}) } }
+  const entry = { id: 'device', pairedAt: 10, kind: 'browser', learningApproval: false }
   const actions = {
+    extraPhoneSet: patch => { requests.push(['device', patch]); return save(patch) },
     extraSetDefaults: patch => { requests.push(['defaults', patch]); return save(patch) },
     extraSetBot: (id, patch) => { requests.push([id, patch]); return save(patch) },
   }
   const render = () => {
     slot = 0
-    return module.exports[name]({ bot, roster, actions, Row: 'row', Card: 'card', Switch: 'switch',
+    return module.exports[name]({ bot, roster, entry, readOnly, actions, Row: 'row', Card: 'card', Switch: 'switch',
       run: pending => {
         const current = pending.catch(error => { errors.push(error.message); return false })
         runs.push(current)
         return current
       } })
   }
-  return { render, requests, runs, errors, bot, roster }
+  return { render, requests, runs, errors, bot, roster, entry }
 }
 
 function nodes(tree, type) {
@@ -54,6 +56,24 @@ function nodes(tree, type) {
 }
 
 const plain = value => JSON.parse(JSON.stringify(value))
+
+test('学习审批开关紧邻完整消息，独立保存且连续点击只提交一次', async () => {
+  const page = readFileSync(new URL('../src/client/phone-page.js', import.meta.url), 'utf8')
+  assert.ok(page.indexOf('h(DeviceLearning,') > page.indexOf('h(DeviceMessages,'))
+  assert.ok(page.indexOf('h(DeviceLearning,') < page.indexOf('h(DeviceResources,'))
+  const ui = component('DeviceLearning')
+  const toggle = nodes(ui.render(), 'switch')[0]
+  assert.equal(toggle.props.on, false)
+  toggle.props.onChange(true); toggle.props.onChange(false)
+  assert.equal(nodes(ui.render(), 'switch')[0].props.disabled, true)
+  await Promise.all(ui.runs)
+  assert.deepEqual(plain(ui.requests), [['device', { deviceId: 'device', pairedAt: 10, learningApproval: true }]])
+  assert.equal(nodes(ui.render(), 'switch')[0].props.on, false, '等服务器状态确认，不乐观伪造授权')
+  const readOnly = component('DeviceLearning', { readOnly: true })
+  nodes(readOnly.render(), 'switch')[0].props.onChange(true)
+  assert.deepEqual(readOnly.requests, [])
+  assert.equal(nodes(readOnly.render(), 'switch')[0].props.disabled, true)
+})
 
 test('通用基础总能显示团队默认入口，旧服务器隐藏且保存期间拒绝重复操作', async () => {
   const source = readFileSync(new URL('../src/client/settings.js', import.meta.url), 'utf8')

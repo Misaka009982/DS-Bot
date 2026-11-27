@@ -203,8 +203,9 @@ const moveWriter = async (host, input, step = 2) => {
 }
 
 test('a move that fails while the plugin unloads hands its input back to the part it left', async (t) => {
-  // The first flush writes the fresh part's handoff; the second moves the input.
-  const fail = { flush: 2 }
+  // Flush 1 checkpoints the parked input on the old part, flush 2 writes the fresh
+  // part's handoff, and flush 3 moves the input.
+  const fail = { flush: 3 }
   const host = await start({ fail, services })
   t.after(host.stop)
   host.agentOf('b').inbox.nextTurn.push(said('h1', 'waiting input', 'e-held'))
@@ -290,7 +291,7 @@ test('an ordinary failure in the move that never started wakes the part at once'
 })
 
 test('a marked earlier part hands its kept input on after a restart, once, and is archived', async (t) => {
-  const fail = { flush: 2 }
+  const fail = { flush: 3 }
   const host = await start({ fail, services })
   host.agentOf('b').inbox.nextTurn.push(said('h1', 'waiting input', 'e-held'))
   await moveWriter(host, [said('m1', 'Now build it', 'e-carry')])
@@ -360,6 +361,54 @@ test('an earlier part is stopped only after its tasks moved to the fresh part', 
   assert.deepEqual(order, [['move', 'b', 's1'], ['archive', 'b']])
 })
 
+test('a part switch carries a reminder arriving from a pruned task', async (t) => {
+  const reminder = { id: 'reminder', status: 'active', target: { kind: 'session', sessionId: 'pruned' } }
+  const editStarted = Promise.withResolvers()
+  const releaseEdit = Promise.withResolvers()
+  const editFinished = Promise.withResolvers()
+  const schedule = {
+    catalog: async () => reminder.status === 'ended' ? [] : [{ ...reminder }],
+    edit: async ({ patch }) => {
+      if (patch.target.sessionId === 'b') {
+        editStarted.resolve()
+        await releaseEdit.promise
+      }
+      reminder.target = patch.target
+      if (patch.target.sessionId === 'b') editFinished.resolve()
+    },
+  }
+  const host = await start({ services: { ...services, schedule } })
+  t.after(async () => { releaseEdit.resolve(); await host.stop() })
+  const switchMoveStarted = Promise.withResolvers()
+  const moveSchedules = host.rt.moveSchedules
+  host.rt.moveSchedules = (from, ...args) => {
+    if (from === 'b') switchMoveStarted.resolve()
+    return moveSchedules(from, ...args)
+  }
+  const archive = host.ctx.workspaceRegistry.archiveSession
+  host.ctx.workspaceRegistry.archiveSession = async (id, options) => {
+    if (id === 'b' && options?.stopActivity) {
+      await editFinished.promise
+      if (reminder.target.sessionId === id) reminder.status = 'ended'
+    }
+    return archive(id, options)
+  }
+  host.rt.state.retiredTasks = [{ botId: 'b', sessionIds: ['pruned'] }]
+  const retirement = host.rt.retireTasks()
+  await editStarted.promise
+  await moveWriter(host, [])
+  await switchMoveStarted.promise
+  await new Promise(resolve => setImmediate(resolve))
+  releaseEdit.resolve()
+
+  await retirement
+  await until(() => host.archived.some(([id]) => id === 'b'))
+  await host.rt.retireTasks()
+  assert.equal(reminder.status, 'active')
+  assert.equal(reminder.target.sessionId, 's1')
+  assert.ok(host.archived.some(([id]) => id === 'pruned'))
+})
+
 test('a failed task move leaves the earlier part unarchived and marked for retry', async (t) => {
   const host = await start({ services })
   t.after(host.stop)
@@ -374,6 +423,26 @@ test('a failed task move leaves the earlier part unarchived and marked for retry
   await host.rt.heldBack()
   assert.deepEqual(host.archived, [['b', { stopActivity: true }]])
   assert.deepEqual(host.state().switching, {})
+})
+
+test('a switch stops an earlier part when deleting a copied legacy reminder fails', async (t) => {
+  const reminder = { id: 'reminder', kind: 'every', title: 'Check in', prompt: 'Check', everySeconds: 3600 }
+  const copies = []
+  const schedule = {
+    list: async ({ sessionId }) => sessionId === 'b' ? [reminder] : [],
+    create: async (sessionId, request) => {
+      copies.push({ sessionId, request })
+      return { id: 'copy' }
+    },
+    delete: async () => { throw new Error('Temporary deletion failure') },
+  }
+  const host = await start({ services: { ...services, schedule } })
+  t.after(host.stop)
+  await moveWriter(host, [])
+  await until(() => host.state().bots.b.sessionId === 's1' && Object.keys(host.state().switching).length === 0)
+  assert.deepEqual(host.archived, [['b', { stopActivity: true }]])
+  assert.deepEqual(copies, [{ sessionId: 's1', request: { title: 'Check in', prompt: 'Check', every_seconds: 3600 } }])
+  assert.equal(host.state().legacyScheduleMoves, undefined)
 })
 
 test('unmarked earlier parts are never resolved by the restart pass', async (t) => {
@@ -577,10 +646,12 @@ test('stream-only usage on assistant/message also detects premature window cut-o
 
 
 test('增补新建会话保留身份和设置，旧历史可读，新 Session 不携带旧消息或摘要', async t => {
-  const host = await start()
+  const host = await start({ services: { agentPresets: { list: async () => [{ id: 'ptc', name: 'PTC' }] } } })
   t.after(host.stop)
   const bot = host.rt.botOf('b')
-  Object.assign(bot, { instructions: '保留我的角色', permission: 'read-only', extras: { messageMode: 'steer' }, memoryReview: { on: true } })
+  Object.assign(bot, { instructions: '保留我的角色', permission: 'read-only', agentPreset: 'ptc', extras: { messageMode: 'steer' }, memoryReview: { on: true } })
+  const createSession = host.rt.createSession
+  host.rt.createSession = (name, options) => { assert.equal(options.bot, bot); assert.equal(options.bot.agentPreset, 'ptc'); return createSession(name, options) }
   const before = structuredClone(bot)
   host.agentOf('b').session.requestHeader = () => ({ config: { provider: 'gateway', model: 'model', reasoningEffort: 'high' } })
   host.agentOf('b').session.deriveMessages = () => [{ role: 'assistant', content: [{ type: 'text', text: '旧消息' }] }]
@@ -599,6 +670,7 @@ test('增补新建会话保留身份和设置，旧历史可读，新 Session �
   assert.equal(previousId, 'b')
   assert.equal(previousSegments, undefined)
   assert.equal(sessionId, 's1')
+  assert.equal(host.created[0].agentPreset, 'ptc')
   assert.deepEqual(kept, expected)
   assert.deepEqual(segments.map(segment => segment.sessionId), ['b'])
   assert.equal(segments[0].note, undefined)
@@ -733,7 +805,7 @@ test('增补新建会话转交失败时把尚未转交的输入留在旧会话�
 })
 
 test('增补新建会话在提交前重验取消、授权与设置变动，失败不归档原会话', async t => {
-  for (const stage of ['cancel', 'authorization', 'settings']) await t.test(stage, async sub => {
+  for (const stage of ['cancel', 'authorization', 'settings', 'preset']) await t.test(stage, async sub => {
     const host = await start()
     sub.after(host.stop)
     const abort = new AbortController()
@@ -744,11 +816,12 @@ test('增补新建会话在提交前重验取消、授权与设置变动，失�
       const result = await create(options)
       if (stage === 'cancel') abort.abort()
       else if (stage === 'authorization') authorized = false
+      else if (stage === 'preset') host.rt.botOf('b').agentPreset = 'ptc'
       else host.rt.botOf('b').effort = 'high'
       return result
     }
     await assert.rejects(host.rt.extraEndpoint('extra-new-session', { botId: 'b', sessionId: 'b' }, abort.signal, caller),
-      error => error.code === (stage === 'settings' ? 'bot/stale' : 'bot/refused'))
+      error => error.code === (['settings', 'preset'].includes(stage) ? 'bot/stale' : 'bot/refused'))
     assert.equal(host.rt.chatOf('b'), 'b')
     assert.equal(host.archived.some(([id]) => id === 'b'), false)
     assert.equal(host.archived.some(([id]) => id === 's1'), true)

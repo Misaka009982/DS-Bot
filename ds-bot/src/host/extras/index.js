@@ -1,5 +1,5 @@
 import { messageMode, remotePermissionError } from './settings.js'
-import { fullMessagesAllowed, remoteExtras } from './access.js'
+import { fullMessagesAllowed, learningApprovalAllowed, remoteExtras } from './access.js'
 import { install as installPrompt } from './prompt.js'
 import { install as installArchive } from './archive.js'
 import { install as installSettings } from './write-settings.js'
@@ -56,6 +56,7 @@ export function install(rt) {
     return messageMode(bot?.extras, requested, bot === undefined ? undefined : rt.state.extras?.defaults)
   }
   rt.extraFullMessagesAllowed = device => rt.extraAuthorizationPending?.() !== true && fullMessagesAllowed(rt.state.extras, device)
+  rt.extraLearningApprovalAllowed = device => rt.extraAuthorizationPending?.() !== true && learningApprovalAllowed(rt.state.extras, device)
   rt.extraRemoteState = (view, device) => {
     const value = remoteExtras(view, rt.state.extras, device)
     if (value?.extras === undefined) return value
@@ -63,11 +64,16 @@ export function install(rt) {
     const extras = { ...value.extras }
     delete extras.workspace
     delete extras.terminals
-    return { ...value, extras: { ...extras, ...resourceView(rt.extraResourceAccess(device)), ...(pending ? { remotePermissions: false, fullMessages: false } : {}),
+    return { ...value, extras: { ...extras, ...resourceView(rt.extraResourceAccess(device)), ...(pending ? { remotePermissions: false, fullMessages: false, learningApproval: { schema: 1, allowed: false } } : {}),
       toolChanges: { schema: 1, read: !pending && value.extras.fullMessages === true },
       ...(value.extras.delegations === undefined ? {} : { delegations: { ...value.extras.delegations, read: !pending && value.extras.fullMessages === true } }) } }
   }
   rt.extraRemoteAccessError = (device, endpoint, payload) => {
+    if (endpoint === 'learning-answer') {
+      if (!rt.extraLearningApprovalAllowed(device)) return { code: 'bot/refused', message: '请先在服务器的已配对设备中开启“允许审批学习提案”。', details: {} }
+      if (!payload || typeof payload.id !== 'string' || !payload.id || typeof payload.approve !== 'boolean'
+        || Object.keys(payload).some(key => !['id', 'approve'].includes(key))) return { code: 'bot/invalid', message: '学习审批只接受原提案编号及批准或拒绝选择。', details: {} }
+    }
     const denial = remotePermissionError(rt.extraAuthorizationPending?.() !== true && rt.state.extras?.remotePermissions === true, device, endpoint, payload)
     if (denial !== undefined) return denial
     const permission = RESOURCE_READS.get(endpoint) ?? RESOURCE_WRITES.get(endpoint)
@@ -84,7 +90,7 @@ export function install(rt) {
     }
     return undefined
   }
-  rt.extraView = () => ({ schema: 1, baseline: '0.3.10', newSession: true, privateGoal: { schema: 1 }, remotePermissions: rt.state.extras?.remotePermissions === true,
+  rt.extraView = () => ({ schema: 1, baseline: '0.4.0', newSession: true, privateGoal: { schema: 1 }, learningApproval: { schema: 1, allowed: true }, remotePermissions: rt.state.extras?.remotePermissions === true,
     defaults: { schema: 1, messageMode: ['queue', 'steer'].includes(rt.state.extras?.defaults?.messageMode) ? rt.state.extras.defaults.messageMode : 'inherit',
       autoArchive: rt.state.extras?.defaults?.autoArchive === true },
     fullMessages: true, ...(rt.extraAttachmentsView() ? { attachments: rt.extraAttachmentsView() } : {}), toolChanges: { schema: 1, read: true }, archive: rt.extraArchiveStatus?.() ?? null, ...delegationView(true), ...resourceView(true) })
@@ -136,6 +142,7 @@ export function install(rt) {
     const fullMessages = body.fullMessages === true && (caller === undefined || caller.fullMessages?.() === true)
     if (body.fullMessages === true && !fullMessages) throw failure('bot/refused', 'Allow full messages for this paired device on the computer first')
     if (endpoint === 'extra-status') return caller === undefined ? rt.extraView() : { ...rt.extraView(), fullMessages: caller.fullMessages?.() === true,
+      learningApproval: { schema: 1, allowed: caller.learningApproval?.() === true },
       toolChanges: { schema: 1, read: delegationAllowed() }, ...delegationView(delegationAllowed()), ...resourceView(caller.resources?.()) }
     const handler = endpoint === 'extra-tool-detail' ? rt.extraToolDetail : endpoint === 'extra-tool-list' ? rt.extraToolList
       : endpoint === 'extra-messages' ? rt.extraMessages : endpoint === 'extra-task-read' ? rt.extraTaskPage : rt.extraTodos
