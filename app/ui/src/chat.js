@@ -327,9 +327,12 @@ function useRoomChat(roomId, part, feed, keep, onUserMatch) {
     }
   }, [active, roomId, part])
 
-  useEffect(() => watchExtraMessages(feed, { roomId, sessionId: part }, () => {
-    if (ready.current) void loadRef.current(undefined, undefined, true)
-  }), [feed, roomId, part])
+  useEffect(() => {
+    if (!active || !feed) return undefined
+    return watchExtraMessages(feed, { roomId, sessionId: part }, () => {
+      if (ready.current) void loadRef.current(undefined, undefined, true)
+    })
+  }, [active, feed, roomId, part])
 
   useEffect(() => {
     if (!active || !feed) return undefined
