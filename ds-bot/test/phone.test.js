@@ -516,6 +516,8 @@ test('a phone write that moved the team carries the new state in its reply', asy
 })
 
 test('配对学习审批须由电脑独立授权，浏览器和手机均受撤销与重新配对限制', async t => {
+  // 独立 Relay 保留默认注册限额，避免前面配对用例耗尽同一个小时窗口。
+  const learningRelay = await startRelayServer()
   const home = mkdtempSync(join(tmpdir(), 'dsb-learning-access-'))
   writeFileSync(join(home, 'state.json'), JSON.stringify(TEAM))
   mkdirSync(join(home, 'learning'))
@@ -525,8 +527,8 @@ test('配对学习审批须由电脑独立授权，浏览器和手机均受撤�
   }]))
   writeFileSync(join(home, 'learning/state.json'), JSON.stringify({ proposals }))
   const desk = open(home)
-  t.after(async () => { await desk.ctx.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
-  await desk.call('phone-set', { server: server.url, on: true })
+  t.after(async () => { await desk.ctx.dispose(); await learningRelay.close(); rmSync(home, { recursive: true, force: true, maxRetries: 5 }) })
+  await desk.call('phone-set', { server: learningRelay.url, on: true })
   await until(() => desk.call('state', {}), state => state.value.phone.status === 'online')
   for (const kind of ['browser', 'phone']) {
     const paired = await desk.call('phone-pair', {})

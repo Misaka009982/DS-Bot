@@ -40,6 +40,7 @@
     { "path": "ds-bot/src/client/cells.js", "anchor": "h(NativeTools, {", "anchors": ["groupToolRows(items, sessionId)", "useExtraToolGroups?.(groups => groups.get(node.key))"] },
     { "path": "ds-bot/src/client/bot-tasks.js", "anchor": "h(MessageNote, {" },
     { "path": "app/ui/src/chat.js", "anchor": "await extraChatRead(call," },
+    { "path": "app/vite.config.js", "anchor": "if (target === pluginPrimitives) return primitives" },
     { "path": "app/ui/src/team.js", "anchor": "changed.extras = value.extras" },
     { "path": "mobile/src/connection.ts", "anchor": "extras?: { schema:", "anchors": ["defaults?: { schema:"] },
     { "path": "mobile/src/team/link.ts", "anchor": "permissionWrite(endpoint, payload)" },

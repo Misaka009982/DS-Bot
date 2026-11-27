@@ -1,7 +1,9 @@
 import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
 const primitives = fileURLToPath(new URL('./ui/src/primitives.js', import.meta.url))
+const pluginPrimitives = fileURLToPath(new URL('../ds-bot/src/client/dsh-primitives.js', import.meta.url)).replaceAll('\\', '/')
 const appResolved = new Map([
   ['@deepseek-ai/dsh-llm/assistant-stream', fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-llm/assistant-stream'))],
   ['@deepseek-ai/dsh-util-values', fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-util-values'))],
@@ -19,8 +21,10 @@ const ownPrimitives = {
   enforce: 'pre',
   resolveId(source, importer) {
     const norm = source.replaceAll('\\', '/')
-    if ((norm === './dsh-primitives.js' && importer?.replaceAll('\\', '/').includes('/ds-bot/src/client/'))
-      || norm.endsWith('/ds-bot/src/client/dsh-primitives.js')) return primitives
+    // 增补子目录同样按实际模块路径适配，不能把宿主 UI 依赖带进独立桌面。
+    const target = norm.startsWith('.') && importer
+      ? resolve(dirname(importer.replaceAll('\\', '/')), norm).replaceAll('\\', '/') : norm
+    if (target === pluginPrimitives) return primitives
     return appResolved.get(source) ?? null
   },
 }
